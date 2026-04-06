@@ -18,6 +18,17 @@ function getPool() {
 }
 
 export default async function handler(req, res) {
+  // ✅ CORS headers
+  res.setHeader("Access-Control-Allow-Origin", "https://geismar-maintenance.github.io");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  // ✅ Handle preflight request
+  if (req.method === "OPTIONS") {
+    res.status(200).end();
+    return;
+  }
+
   try {
     const pool = getPool();
     const { rows } = await pool.query(
@@ -25,9 +36,6 @@ export default async function handler(req, res) {
     );
     res.status(200).json(rows);
   } catch (err) {
-    console.error("PARTS ERROR:", err);
-    res.status(500).json({
-      error: err.message
-    });
+    res.status(500).json({ error: err.message });
   }
 }
