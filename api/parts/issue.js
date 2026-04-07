@@ -2,107 +2,61 @@ export const runtime = "nodejs";
 
 import { Pool } from "pg";
 
-/* ---------------------------------------------------------
-   Database connection
---------------------------------------------------------- */
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-/* ---------------------------------------------------------
-   POST /api/parts/issue
---------------------------------------------------------- */
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
+  if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const {
-    partid,
-    from_locationid,
-    qty,
-    assetid,
-    performed_by
-  } = req.body;
-
-  /* -------- Basic validation -------- */
-  if (
-    !partid ||
-    !from_locationid ||
-    !qty ||
-    qty <= 0
-  ) {
-    return res.status(400).json({ error: "Invalid request data" });
-  }
-
-  const client = await pool.connect();
-
   try {
-    await client.query("BEGIN");
+    const client = await pool.connect();
 
-    /* -------- Atomically decrement inventory -------- */
-    const updateResult = await client.query(
-      `
-      UPDATE partlocations
-      SET qty = qty - $1
-      WHERE locationid = $2
-        AND partid = $3
-        AND qty >= $1
-      RETURNING qty
-      `,
-      [qty, from_locationid, partid]
-    );
+    // 1️⃣ Get parts with total quantity
+    const partsResult = await client.query(`
+      SELECT
+        p.partid,
+        p.partnumber,
+        p.manufacturer,
+        p.model,
+        p.description,
+        p.reorderlevel,
+        COALESCE(SUM(l.qty), 0) AS total_qty
+      FROM masterparts p
+      LEFT JOIN partlocations l ON l.partid = p.partid
+      GROUP BY p.partid
+      ORDER BY p.partnumber
+    `);
 
-    if (updateResult.rowCount === 0) {
-      throw new Error("Insufficient quantity in selected location");
-    }
-
-    /* -------- Get model snapshot for transaction -------- */
-    const partResult = await client.query(
-      `SELECT model FROM masterparts WHERE partid = $1`,
-      [partid]
-    );
-
-    const modelSnapshot =
-      partResult.rows.length > 0
-        ? partResult.rows[0].model
-        : null;
-
-    /* -------- Insert transaction record -------- */
-    await client.query(
-      `
-      INSERT INTO transactions (
+    // 2️⃣ Get all locations
+    const locationsResult = await client.query(`
+      SELECT
+        locationid,
         partid,
-        from_locationid,
-        qty,
-        transactiontype,
-        assetid,
-        performed_by,
-        part_model_snapshot
+        cabinet,
+        section,
+        bin,
+        qty
+      FROM partlocations
+    `);
+
+    client.release();
+
+    // 3️⃣ Attach locations to each part
+    const parts = partsResult.rows.map(part => ({
+      ...part,
+      locations: locationsResult.rows.filter(
+        loc => loc.partid === part.partid && loc.qty > 0
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `,
-      [
-        partid,
-        from_locationid,
-        qty,
-        1,              -- 1 = ISSUE (from transactiontypes)
-        assetid || null,
-        performed_by || null,
-        modelSnapshot
-      ]
-    );
+    }));
 
-    await client.query("COMMIT");
-
-    return res.status(200).json({ success: true });
+    res.status(200).json(parts);
 
   } catch (err) {
-    await client.query("ROLLBACK");
-    return res.status(400).json({ error: err.message });
-
-  } finally {
-    client.release();
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch parts" });
   }
 }
