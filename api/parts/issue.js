@@ -23,6 +23,7 @@ export default async function handler(req, res) {
         p.manufacturer,
         p.model,
         p.description,
+        p.cost,
         p.reorderlevel,
         COALESCE(SUM(l.qty), 0) AS total_qty
       FROM masterparts p
@@ -31,7 +32,7 @@ export default async function handler(req, res) {
       ORDER BY p.partnumber
     `);
 
-    // 2️⃣ Get all locations
+    // 2️⃣ Get all part locations
     const locationsResult = await client.query(`
       SELECT
         locationid,
@@ -41,6 +42,8 @@ export default async function handler(req, res) {
         bin,
         qty
       FROM partlocations
+      WHERE qty > 0
+      ORDER BY cabinet, section, bin
     `);
 
     client.release();
@@ -49,14 +52,14 @@ export default async function handler(req, res) {
     const parts = partsResult.rows.map(part => ({
       ...part,
       locations: locationsResult.rows.filter(
-        loc => loc.partid === part.partid && loc.qty > 0
+        loc => loc.partid === part.partid
       )
     }));
 
     res.status(200).json(parts);
-
   } catch (err) {
-    console.error(err);
+    console.error("Failed to fetch parts:", err);
     res.status(500).json({ error: "Failed to fetch parts" });
   }
 }
+``
