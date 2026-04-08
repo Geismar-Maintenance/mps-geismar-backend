@@ -8,6 +8,16 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
+  // ✅ CORS headers (required)
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  // ✅ Handle preflight
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -25,7 +35,7 @@ export default async function handler(req, res) {
         p.description,
         p.cost,
         p.reorderlevel,
-        COALESCE(SUM(l.qty), 0) AS total_qty
+        COALESCE(SUM(l.qty), 0)::INTEGER AS total_qty
       FROM masterparts p
       LEFT JOIN partlocations l ON l.partid = p.partid
       GROUP BY p.partid
