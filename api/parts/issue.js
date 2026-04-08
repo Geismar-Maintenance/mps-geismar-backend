@@ -7,27 +7,46 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+// ✅ Transaction type constants (match transactiontypes table)
+const TRANSACTION_TYPES = {
+  ISSUE: 1,
+  RECEIVE: 2,
+  MOVE: 3
+};
+
 export default async function handler(req, res) {
-  // ✅ CORS – always first
+  // ✅ CORS HEADERS — MUST BE FIRST
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
+  // ✅ Preflight
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
+  // ✅ POST only
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // ✅ Normalize and validate input
+  // ✅ Normalize & validate input
   const partid = Number(req.body.partid);
   const from_locationid = Number(req.body.from_locationid);
   const qty = Number(req.body.qty);
   const assetid = Number(req.body.assetid);
   const workorder = req.body.workorder ?? null;
   const performed_by = req.body.performed_by ?? "system";
+
+  if (
+    !Number.isInteger(partid) ||
+    !Number.isInteger(from_locationid) ||
+    !Number.isInteger(qty) ||
+    !Number.isInteger(assetid) ||
+    qty <= 0
+  ) {
+    return res.status(400).json({ error: "Invalid issue request data" });
+  }
 
   console.log("ISSUE REQUEST BODY:", {
     partid,
@@ -43,7 +62,7 @@ export default async function handler(req, res) {
   try {
     await client.query("BEGIN");
 
-    // 1️⃣ Lock inventory row
+    // 1️⃣ Lock & validate inventory
     const locRes = await client.query(
       `
       SELECT qty
@@ -77,11 +96,11 @@ export default async function handler(req, res) {
       throw new Error("Inventory update failed");
     }
 
-    // 3️⃣ Write transaction record
+    // 3️⃣ Insert transaction record
     await client.query(
       `
       INSERT INTO transactions (
-        transactiontype,
+        transactiontypeid,
         partid,
         from_locationid,
         qty,
@@ -91,11 +110,11 @@ export default async function handler(req, res) {
         transactiondate
       )
       VALUES (
-        'ISSUE',
-        $1, $2, $3, $4, $5, $6, NOW()
+        $1, $2, $3, $4, $5, $6, $7, NOW()
       )
       `,
       [
+        TRANSACTION_TYPES.ISSUE,
         partid,
         from_locationid,
         qty,
@@ -109,6 +128,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
+      locationid: from_locationid,
       remaining_qty: updateRes.rows[0].qty
     });
 
