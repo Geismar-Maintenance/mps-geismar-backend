@@ -1,4 +1,3 @@
-
 export const runtime = "nodejs";
 
 import { Pool } from "pg";
@@ -9,7 +8,7 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
-  // ✅ CORS HEADERS — MUST BE FIRST
+  // ✅ CORS HEADERS — MUST BE FIRST, NO EXCEPTIONS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -24,95 +23,73 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // ✅ search logic continues below
+  const search = req.query.search?.trim() || "";
 
-
-  const {
-    partid,
-    from_locationid,
-    qty,
-    assetid,
-    workorder,
-    performed_by
-  } = req.body;
-
-  if (!partid || !from_locationid || !qty || !assetid) {
-    return res.status(400).json({ error: "Missing required fields" });
+  // ✅ Guard short search (SAFE, no SQL yet)
+  if (search.length < 2) {
+    return res.status(200).json([]);
   }
 
-  const client = await pool.connect();
+  let client;
 
   try {
-    await client.query("BEGIN");
+    client = await pool.connect();
 
-    // 1️⃣ Validate available quantity
-    const locRes = await client.query(
+    const partsResult = await client.query(
       `
-      SELECT qty
+      SELECT
+        p.partid,
+        p.partnumber,
+        p.manufacturer,
+        p.model,
+        p.description,
+        p.cost,
+        p.reorderlevel,
+        COALESCE(SUM(l.qty), 0)::INTEGER AS total_qty
+      FROM masterparts p
+      LEFT JOIN partlocations l ON l.partid = p.partid
+      WHERE
+        COALESCE(p.partnumber, '') ILIKE $1 OR
+        COALESCE(p.model, '') ILIKE $1 OR
+        COALESCE(p.description, '') ILIKE $1
+      GROUP BY p.partid
+      ORDER BY p.partnumber
+      LIMIT 100
+      `,
+      [`%${search}%`]
+    );
+
+    const locationsResult = await client.query(
+      `
+      SELECT
+        locationid,
+        partid,
+        cabinet,
+        section,
+        bin,
+        qty
       FROM partlocations
-      WHERE locationid = $1
-      FOR UPDATE
-      `,
-      [from_locationid]
-    );
-
-    if (locRes.rowCount === 0) {
-      throw new Error("Location not found");
-    }
-
-    const availableQty = locRes.rows[0].qty;
-    if (availableQty < qty) {
-      throw new Error("Insufficient inventory");
-    }
-
-    // 2️⃣ Decrement inventory
-    await client.query(
+      WHERE qty > 0
       `
-      UPDATE partlocations
-      SET qty = qty - $1
-      WHERE locationid = $2
-      `,
-      [qty, from_locationid]
     );
 
-    // 3️⃣ Insert transaction record
-    await client.query(
-      `
-      INSERT INTO transactions (
-        transactiontype,
-        partid,
-        from_locationid,
-        qty,
-        assetid,
-        workorder,
-        performed_by,
-        transactiondate
-      )
-      VALUES (
-        'ISSUE',
-        $1, $2, $3, $4, $5, $6, NOW()
-      )
-      `,
-      [
-        partid,
-        from_locationid,
-        qty,
-        assetid,
-        workorder,
-        performed_by
-      ]
-    );
+    const parts = partsResult.rows.map(p => ({
+      ...p,
+      locations: locationsResult.rows.filter(l => l.partid === p.partid)
+    }));
 
-    await client.query("COMMIT");
-
-    res.status(200).json({ success: true });
+    return res.status(200).json(parts);
 
   } catch (err) {
-    await client.query("ROLLBACK");
-    console.error("Issue failed:", err);
-    res.status(400).json({ error: err.message });
+    console.error("ERROR in /api/parts:", err);
+
+    // ✅ Headers already set, so browser will NOT show CORS error
+    return res.status(500).json({
+      error: "Failed to fetch parts"
+    });
 
   } finally {
-    client.release();
+    if (client) client.release();
   }
 }
+``
