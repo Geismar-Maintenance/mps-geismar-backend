@@ -8,12 +8,11 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
-  // ✅ CORS HEADERS (REQUIRED)
+  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // ✅ Handle preflight
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
@@ -28,10 +27,11 @@ export default async function handler(req, res) {
     const result = await client.query(`
       SELECT
         assetid,
-        assettag,
-        description
+        assetnumber,
+        assetname
       FROM assets
-      ORDER BY assettag
+      WHERE isactive = true
+      ORDER BY assetnumber
     `);
 
     client.release();
@@ -42,3 +42,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: "Failed to fetch assets" });
   }
 }
+``
