@@ -1,73 +1,115 @@
 export const runtime = "nodejs";
 
-import { getPool } from "../../lib/db.js";
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+const TRANSACTION_TYPES = {
+  ISSUE: 1,
+  RECEIVE: 2,
+  MOVE: 3
+};
 
 export default async function handler(req, res) {
+  // ✅ CORS
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { partid, cabinet, section, bin, qty, performed_by } = req.body;
+  // ✅ Normalize input
+  const partid = Number(req.body.partid);
+  const locationid = Number(req.body.locationid);
+  const qty = Number(req.body.qty);
+  const performed_by = req.body.performed_by ?? "system";
 
-  if (!partid || !cabinet || !section || !bin || !qty || qty <= 0) {
-    return res.status(400).json({ error: "Invalid request data" });
+  if (
+    !Number.isInteger(partid) ||
+    !Number.isInteger(locationid) ||
+    !Number.isInteger(qty) ||
+    qty <= 0
+  ) {
+    return res.status(400).json({ error: "Invalid receive data" });
   }
 
-  const pool = getPool();
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    // 1️⃣ Upsert inventory
-    const locResult = await client.query(
+    // 1️⃣ Upsert location inventory
+    const updateRes = await client.query(
       `
-      INSERT INTO partlocations (partid, cabinet, section, bin, qty)
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (partid, cabinet, section, bin)
-      DO UPDATE SET qty = partlocations.qty + EXCLUDED.qty
-      RETURNING locationid
+      UPDATE partlocations
+      SET qty = qty + $1
+      WHERE locationid = $2 AND partid = $3
+      RETURNING locationid, qty
       `,
-      [partid, cabinet, section, bin, qty]
+      [qty, locationid, partid]
     );
 
-    const to_locationid = locResult.rows[0].locationid;
+    let finalQty;
 
-    // 2️⃣ Get model snapshot
-    const partResult = await client.query(
-      `SELECT model FROM masterparts WHERE partid = $1`,
-      [partid]
-    );
+    if (updateRes.rowCount === 0) {
+      // Location + part combination doesn’t exist yet → create it
+      const insertRes = await client.query(
+        `
+        INSERT INTO partlocations (partid, locationid, qty)
+        VALUES ($1, $2, $3)
+        RETURNING locationid, qty
+        `,
+        [partid, locationid, qty]
+      );
+      finalQty = insertRes.rows[0].qty;
+    } else {
+      finalQty = updateRes.rows[0].qty;
+    }
 
-    const modelSnapshot = partResult.rows[0]?.model || null;
-
-    // 3️⃣ Insert transaction
+    // 2️⃣ Insert transaction record
     await client.query(
       `
       INSERT INTO transactions (
+        transactiontypeid,
         partid,
         to_locationid,
         qty,
-        transactiontype,
         performed_by,
-        part_model_snapshot
+        transactiondate
       )
-      VALUES ($1, $2, $3, 2, $4, $5)
+      VALUES (
+        $1, $2, $3, $4, $5, NOW()
+      )
       `,
       [
+        TRANSACTION_TYPES.RECEIVE,
         partid,
-        to_locationid,
+        locationid,
         qty,
-        performed_by || null,
-        modelSnapshot
+        performed_by
       ]
     );
 
     await client.query("COMMIT");
 
-    return res.json({ success: true });
+    return res.status(200).json({
+      success: true,
+      locationid,
+      new_qty: finalQty
+    });
+
   } catch (err) {
     await client.query("ROLLBACK");
+    console.error("RECEIVE FAILED:", err);
     return res.status(400).json({ error: err.message });
   } finally {
     client.release();
