@@ -8,68 +8,115 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
-  // ✅ CORS HEADERS — MUST BE FIRST
+  // ✅ CORS – always first
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // ✅ Handle preflight
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  // ✅ Allow POST only
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
-  console.log("ISSUE REQUEST BODY:", req.body);
+
+  // ✅ Normalize and validate input
+  const partid = Number(req.body.partid);
+  const from_locationid = Number(req.body.from_locationid);
+  const qty = Number(req.body.qty);
+  const assetid = Number(req.body.assetid);
+  const workorder = req.body.workorder ?? null;
+  const performed_by = req.body.performed_by ?? "system";
+
+  console.log("ISSUE REQUEST BODY:", {
+    partid,
+    from_locationid,
+    qty,
+    assetid,
+    workorder,
+    performed_by
+  });
+
+  const client = await pool.connect();
+
   try {
-    const client = await pool.connect();
+    await client.query("BEGIN");
 
-    // 1️⃣ Get parts with total quantity
-    const partsResult = await client.query(`
-      SELECT
-        p.partid,
-        p.partnumber,
-        p.manufacturer,
-        p.model,
-        p.description,
-        p.cost,
-        p.reorderlevel,
-        COALESCE(SUM(l.qty), 0) AS total_qty
-      FROM masterparts p
-      LEFT JOIN partlocations l ON l.partid = p.partid
-      GROUP BY p.partid
-      ORDER BY p.partnumber
-    `);
-
-    // 2️⃣ Get all part locations
-    const locationsResult = await client.query(`
-      SELECT
-        locationid,
-        partid,
-        cabinet,
-        section,
-        bin,
-        qty
+    // 1️⃣ Lock inventory row
+    const locRes = await client.query(
+      `
+      SELECT qty
       FROM partlocations
-      WHERE qty > 0
-      ORDER BY cabinet, section, bin
-    `);
+      WHERE locationid = $1
+      FOR UPDATE
+      `,
+      [from_locationid]
+    );
 
-    client.release();
+    if (locRes.rowCount === 0) {
+      throw new Error("Location not found");
+    }
 
-    // 3️⃣ Attach locations to each part
-    const parts = partsResult.rows.map(part => ({
-      ...part,
-      locations: locationsResult.rows.filter(
-        loc => loc.partid === part.partid
+    if (locRes.rows[0].qty < qty) {
+      throw new Error("Insufficient inventory");
+    }
+
+    // 2️⃣ Decrement inventory
+    const updateRes = await client.query(
+      `
+      UPDATE partlocations
+      SET qty = qty - $1
+      WHERE locationid = $2
+      RETURNING locationid, qty
+      `,
+      [qty, from_locationid]
+    );
+
+    if (updateRes.rowCount === 0) {
+      throw new Error("Inventory update failed");
+    }
+
+    // 3️⃣ Write transaction record
+    await client.query(
+      `
+      INSERT INTO transactions (
+        transactiontype,
+        partid,
+        from_locationid,
+        qty,
+        assetid,
+        workorder,
+        performed_by,
+        transactiondate
       )
-    }));
+      VALUES (
+        'ISSUE',
+        $1, $2, $3, $4, $5, $6, NOW()
+      )
+      `,
+      [
+        partid,
+        from_locationid,
+        qty,
+        assetid,
+        workorder,
+        performed_by
+      ]
+    );
 
-    res.status(200).json(parts);
+    await client.query("COMMIT");
+
+    return res.status(200).json({
+      success: true,
+      remaining_qty: updateRes.rows[0].qty
+    });
+
   } catch (err) {
-    console.error("Failed to fetch parts:", err);
-    res.status(500).json({ error: "Failed to fetch parts" });
+    await client.query("ROLLBACK");
+    console.error("ISSUE FAILED:", err);
+    return res.status(400).json({ error: err.message });
+  } finally {
+    client.release();
   }
 }
