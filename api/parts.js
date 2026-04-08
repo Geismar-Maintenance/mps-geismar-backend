@@ -1,3 +1,4 @@
+
 export const runtime = "nodejs";
 
 import { Pool } from "pg";
@@ -8,20 +9,23 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
-// CORS
-res.setHeader("Access-Control-Allow-Origin", "*");
-res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  // ✅ CORS HEADERS — MUST BE FIRST
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-// Preflight
-if (req.method === "OPTIONS") {
-  return res.status(200).end();
-}
+  // ✅ Preflight
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
 
-// ✅ ALLOW GET
-if (req.method !== "GET") {
-  return res.status(405).json({ error: "Method not allowed" });
-}
+  // ✅ Allow GET only
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // ✅ search logic continues below
+
 
   const {
     partid,
