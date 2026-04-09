@@ -106,3 +106,32 @@ export default async function handler(req, res) {
         partid,
         from_locationid,
         to_locationid,
+        qty,
+        performed_by,
+        transactiondate
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `,
+      [
+        TRANSACTION_TYPES.MOVE,
+        partid,
+        from_locationid,
+        to_locationid,
+        qty,
+        performed_by
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(200).json({ success: true });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("MOVE FAILED:", err);
+    return res.status(400).json({ error: err.message });
+
+  } finally {
+    client.release();
+  }
+}
