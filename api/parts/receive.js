@@ -13,6 +13,8 @@ const TRANSACTION_TYPES = {
   MOVE: 3
 };
 
+const RECEIVING_LOCATION_ID = 1;
+
 export default async function handler(req, res) {
   // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -28,19 +30,20 @@ export default async function handler(req, res) {
   }
 
   // ✅ Normalize input
-  const partid = Number(req.body.partid);
-  const locationid = Number(req.body.locationid);
-  const qty = Number(req.body.qty);
-  const performed_by = req.body.performed_by ?? "system";
+const partid = parseInt(req.body?.partid, 10);
+const qty = parseInt(req.body?.qty, 10);
+const performed_by = req.body?.performed_by ?? "system";
 
-  if (
-    !Number.isInteger(partid) ||
-    !Number.isInteger(locationid) ||
-    !Number.isInteger(qty) ||
-    qty <= 0
-  ) {
-    return res.status(400).json({ error: "Invalid receive data" });
-  }
+// ✅ Receiving is enforced here
+const locationid = RECEIVING_LOCATION_ID;
+
+if (!partid || !qty || qty <= 0) {
+  return res.status(400).json({
+    error: "Invalid receive data",
+    debug: { partid, qty }
+  });
+}
+``
 
   const client = await pool.connect();
 
