@@ -7,23 +7,41 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+const TRANSACTION_TYPES = {
+  ISSUE: 1,
+  RECEIVE: 2,
+  MOVE: 3
+};
+
 export default async function handler(req, res) {
+  // ✅ CORS
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const {
-    partid,
-    from_locationid,
-    cabinet,
-    section,
-    bin,
-    qty,
-    performed_by
-  } = req.body;
+  const partid = parseInt(req.body?.partid, 10);
+  const from_locationid = parseInt(req.body?.from_locationid, 10);
+  const to_locationid = parseInt(req.body?.to_locationid, 10);
+  const qty = parseInt(req.body?.qty, 10);
+  const performed_by = req.body?.performed_by ?? "system";
 
-  if (!partid || !from_locationid || !cabinet || !section || !bin || qty <= 0) {
-    return res.status(400).json({ error: "Invalid request" });
+  if (
+    !partid ||
+    !from_locationid ||
+    !to_locationid ||
+    !qty ||
+    qty <= 0 ||
+    from_locationid === to_locationid
+  ) {
+    return res.status(400).json({ error: "Invalid move data" });
   }
 
   const client = await pool.connect();
@@ -31,77 +49,57 @@ export default async function handler(req, res) {
   try {
     await client.query("BEGIN");
 
-    // 1️⃣ Decrement source location
-    const dec = await client.query(
+    // 1️⃣ Lock & validate source inventory
+    const source = await client.query(
+      `
+      SELECT qty
+      FROM partlocations
+      WHERE partid = $1 AND locationid = $2
+      FOR UPDATE
+      `,
+      [partid, from_locationid]
+    );
+
+    if (source.rowCount === 0 || source.rows[0].qty < qty) {
+      throw new Error("Insufficient inventory at source location");
+    }
+
+    // 2️⃣ Decrement source
+    await client.query(
       `
       UPDATE partlocations
       SET qty = qty - $1
-      WHERE locationid = $2
-        AND partid = $3
-        AND qty >= $1
-      RETURNING qty
+      WHERE partid = $2 AND locationid = $3
       `,
-      [qty, from_locationid, partid]
+      [qty, partid, from_locationid]
     );
 
-    if (dec.rowCount === 0) {
-      throw new Error("Insufficient quantity in source location");
-    }
-
-    // 2️⃣ Increment / create destination location
+    // 3️⃣ Increment destination (upsert)
     const dest = await client.query(
       `
-      INSERT INTO partlocations (partid, cabinet, section, bin, qty)
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (partid, cabinet, section, bin)
-      DO UPDATE SET qty = partlocations.qty + EXCLUDED.qty
-      RETURNING locationid
+      UPDATE partlocations
+      SET qty = qty + $1
+      WHERE partid = $2 AND locationid = $3
+      RETURNING qty
       `,
-      [partid, cabinet, section, bin, qty]
+      [qty, partid, to_locationid]
     );
 
-    const to_locationid = dest.rows[0].locationid;
+    if (dest.rowCount === 0) {
+      await client.query(
+        `
+        INSERT INTO partlocations (partid, locationid, qty)
+        VALUES ($1, $2, $3)
+        `,
+        [partid, to_locationid, qty]
+      );
+    }
 
-    // 3️⃣ Model snapshot
-    const part = await client.query(
-      "SELECT model FROM masterparts WHERE partid = $1",
-      [partid]
-    );
-
-    const modelSnapshot = part.rows[0]?.model || null;
-
-    // 4️⃣ Insert TRANSFER transaction (type = 3)
+    // 4️⃣ Record transaction
     await client.query(
       `
       INSERT INTO transactions (
+        transactiontypeid,
         partid,
         from_locationid,
         to_locationid,
-        qty,
-        transactiontype,
-        performed_by,
-        part_model_snapshot
-      )
-      VALUES ($1, $2, $3, $4, 3, $5, $6)
-      `,
-      [
-        partid,
-        from_locationid,
-        to_locationid,
-        qty,
-        performed_by || null,
-        modelSnapshot
-      ]
-    );
-
-    await client.query("COMMIT");
-    res.status(200).json({ success: true });
-
-  } catch (err) {
-    await client.query("ROLLBACK");
-    res.status(400).json({ error: err.message });
-
-  } finally {
-    client.release();
-  }
-}
