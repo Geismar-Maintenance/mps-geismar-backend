@@ -1,11 +1,12 @@
-const { Pool } = require("pg");
+import { Pool } from "pg";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
+  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -15,6 +16,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    // ✅ GET – list work orders
     if (req.method === "GET") {
       const result = await pool.query(`
         SELECT
@@ -36,10 +38,48 @@ module.exports = async function handler(req, res) {
       return res.status(200).json(result.rows);
     }
 
+    // ✅ POST – create work order
+    if (req.method === "POST") {
+      const {
+        assetid,
+        description,
+        wotype,
+        priority,
+        duedate
+      } = req.body;
+
+      // ✅ Basic validation
+      if (!assetid || !description || !wotype || !priority) {
+        return res.status(400).json({
+          error: "assetid, description, wotype, and priority are required"
+        });
+      }
+
+      const result = await pool.query(
+        `
+        INSERT INTO workorders
+          (assetid, description, wotype, priority, status, duedate)
+        VALUES
+          ($1, $2, $3, $4, 1, $5)
+        RETURNING woid
+        `,
+        [
+          assetid,
+          description,
+          wotype,
+          priority,
+          duedate || null
+        ]
+      );
+
+      return res.status(201).json(result.rows[0]);
+    }
+
+    // ❌ Any other method
     return res.status(405).json({ error: "Method not allowed" });
 
   } catch (err) {
-    console.error("Workorders API failed:", err);
+    console.error("Workorders API error:", err);
     return res.status(500).json({ error: err.message });
   }
-};
+}
