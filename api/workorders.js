@@ -1,50 +1,69 @@
 export const runtime = "nodejs";
 
-import { Pool } from "pg";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+import pool from "../lib/db.js";
 
 export default async function handler(req, res) {
-  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+  // ✅ GET – list work orders
+  if (req.method === "GET") {
+    try {
+      const result = await pool.query(`
+        SELECT
+          w.woid,
+          a.assetname,
+          w.description,
+          wt.name AS type,
+          p.name AS priority,
+          s.name AS status,
+          w.duedate
+        FROM workorders w
+        LEFT JOIN assets a ON a.assetid = w.assetid
+        LEFT JOIN wotypes wt ON wt.id = w.wotype
+        LEFT JOIN wopriorities p ON p.id = w.priority
+        LEFT JOIN wostatus s ON s.id = w.status
+        ORDER BY w.opendate DESC
+      `);
+
+      return res.status(200).json(result.rows);
+    } catch (err) {
+      console.error("Error loading work orders:", err);
+      return res.status(500).json({ error: "Failed to load work orders" });
+    }
   }
 
-  try {
-    const client = await pool.connect();
+  // ✅ POST – create work order
+  if (req.method === "POST") {
+    const { assetid, description, wotype, priority, duedate } = req.body;
 
-    const result = await client.query(`
-      SELECT
-        w.workorderid,
-        w.workordernumber,
-        w.description,
-        w.status,
+    if (!assetid || !description || !wotype || !priority) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
 
-        a.assetid,
-        a.assettag
+    try {
+      const result = await pool.query(
+        `
+        INSERT INTO workorders
+          (assetid, description, wotype, priority, status, duedate)
+        VALUES
+          ($1, $2, $3, $4, 1, $5)
+        RETURNING woid
+        `,
+        [assetid, description, wotype, priority, duedate || null]
+      );
 
-      FROM workorders w
-      LEFT JOIN assets a ON a.assetid = w.assetid
-
-      ORDER BY w.workordernumber DESC
-    `);
-
-    client.release();
-
-    res.status(200).json(result.rows);
-  } catch (err) {
-    console.error("Failed to fetch work orders:", err);
-    res.status(500).json({ error: "Failed to fetch work orders" });
+      return res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error("Error creating work order:", err);
+      return res.status(500).json({ error: "Failed to create work order" });
+    }
   }
+
+  return res.status(405).json({ error: "Method not allowed" });
 }
