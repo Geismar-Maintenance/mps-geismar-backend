@@ -1,6 +1,11 @@
 export const runtime = "nodejs";
 
-import pool from "../lib/db.js";
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
