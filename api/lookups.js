@@ -6,26 +6,37 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
+  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  const { table } = req.query;
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const { type } = req.query;
 
   try {
-    if (table === "wotypes") {
+    if (type === "wotypes") {
       const r = await pool.query(
         "SELECT id, type, description FROM wotypes ORDER BY type"
       );
-      return res.json(r.rows);
+      return res.status(200).json(r.rows);
     }
 
-    if (table === "wopriorities") {
+    if (type === "wopriorities") {
       const r = await pool.query(
         "SELECT id, priority, description FROM wopriorities ORDER BY id"
       );
-      return res.json(r.rows);
+      return res.status(200).json(r.rows);
     }
 
-    return res.status(400).json({ error: "Unknown lookup table" });
+    return res.status(400).json({ error: "Unknown lookup type" });
 
   } catch (err) {
     console.error("Lookup error:", err);
