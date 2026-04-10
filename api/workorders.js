@@ -12,24 +12,26 @@ export default async function handler(req, res) {
   }
 
   // ✅ GET – list work orders
-  if (req.method === "GET") {
-    try {
-      const result = await pool.query(`
-        SELECT
-          w.woid,
-          a.assetname,
-          w.description,
-          wt.name AS type,
-          p.name AS priority,
-          s.name AS status,
-          w.duedate
-        FROM workorders w
-        LEFT JOIN assets a ON a.assetid = w.assetid
-        LEFT JOIN wotypes wt ON wt.id = w.wotype
-        LEFT JOIN wopriorities p ON p.id = w.priority
-        LEFT JOIN wostatus s ON s.id = w.status
-        ORDER BY w.opendate DESC
-      `);
+ const result = await pool.query(`
+  SELECT
+    w.woid,
+    a.assetname,
+    w.description,
+    wt.type         AS type,
+    p.priority      AS priority,
+    s.status        AS status,
+    w.duedate
+  FROM workorders w
+  LEFT JOIN assets a
+    ON a.assetid = w.assetid
+  LEFT JOIN wotypes wt
+    ON wt.id = w.wotype
+  LEFT JOIN wopriorities p
+    ON p.id = w.priority
+  LEFT JOIN wostatus s
+    ON s.id = w.status
+  ORDER BY w.opendate DESC
+`);
 
       return res.status(200).json(result.rows);
     } catch (err) {
