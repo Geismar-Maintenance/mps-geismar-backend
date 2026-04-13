@@ -21,7 +21,44 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  const summary = req.query.summary;
   const search = req.query.search?.trim() || "";
+
+  /* ======================================================
+     ✅ DASHBOARD INVENTORY SUMMARY MODE
+     ====================================================== */
+  if (summary === "inventory") {
+    try {
+      const result = await pool.query(`
+        SELECT
+          COUNT(*) FILTER (
+            WHERE total_qty = 0
+          ) AS out_stock,
+          COUNT(*) FILTER (
+            WHERE reorderlevel > 0 AND total_qty <= reorderlevel
+          ) AS low_stock
+        FROM (
+          SELECT
+            p.partid,
+            COALESCE(SUM(pl.qty), 0) AS total_qty,
+            p.reorderlevel
+          FROM masterparts p
+          LEFT JOIN partlocations pl ON p.partid = pl.partid
+          GROUP BY p.partid
+        ) t;
+      `);
+
+      return res.status(200).json(result.rows[0]);
+
+    } catch (err) {
+      console.error("ERROR in /api/parts summary:", err);
+      return res.status(500).json({ error: "Inventory summary failed" });
+    }
+  }
+
+  /* ======================================================
+     ✅ STANDARD PART SEARCH MODE
+     ====================================================== */
 
   if (search.length < 2) {
     return res.status(200).json([]);
@@ -57,7 +94,7 @@ export default async function handler(req, res) {
       [`%${search}%`]
     );
 
-    // ✅ Inventory locations (JOIN locations)
+    // ✅ Inventory locations
     const locationsResult = await client.query(
       `
       SELECT
@@ -75,7 +112,9 @@ export default async function handler(req, res) {
 
     const parts = partsResult.rows.map(p => ({
       ...p,
-      locations: locationsResult.rows.filter(l => l.partid === p.partid)
+      locations: locationsResult.rows.filter(
+        l => l.partid === p.partid
+      )
     }));
 
     return res.status(200).json(parts);
