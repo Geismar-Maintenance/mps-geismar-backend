@@ -70,7 +70,86 @@ export default async function handler(req, res) {
           priority,
           duedate || null
         ]
-      );
+
+        // POST /api/workorders
+if (req.method === "POST") {
+  const { action } = req.body;
+
+  // ==========================
+  // CREATE WORK ORDER (existing)
+  // ==========================
+  if (!action || action === "create") {
+    const { assetid, description, wotype, priority, duedate } = req.body;
+
+    if (!assetid || !description || !wotype || !priority) {
+      return res.status(400).json({
+        error: "assetid, description, wotype, and priority are required"
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO workorders
+        (assetid, description, wotype, priority, status, duedate)
+      VALUES
+        ($1, $2, $3, $4, 1, $5)
+      RETURNING woid
+      `,
+      [assetid, description, wotype, priority, duedate || null]
+    );
+
+    return res.status(201).json(result.rows[0]);
+  }
+
+  // ==========================
+  // CLOSE WORK ORDER (NEW)
+  // ==========================
+  if (action === "close") {
+    const { woid, workperformed } = req.body;
+
+    if (!woid || !workperformed || !workperformed.trim()) {
+      return res.status(400).json({
+        error: "woid and workperformed are required"
+      });
+    }
+
+    // Ensure WO exists and is still open
+    const check = await pool.query(
+      `SELECT status FROM workorders WHERE woid = $1`,
+      [woid]
+    );
+
+    if (check.rowCount === 0) {
+      return res.status(404).json({ error: "Work order not found" });
+    }
+
+    if (check.rows[0].status !== 1) {
+      return res.status(409).json({
+        error: "Work order is already closed"
+      });
+    }
+
+    await pool.query(
+      `
+      UPDATE workorders
+      SET
+        workperformed = $1,
+        status = 2,
+        closeddate = CURRENT_DATE,
+        islate = (
+          duedate IS NOT NULL AND CURRENT_DATE > duedate
+        )
+      WHERE woid = $2
+      `,
+      [workperformed.trim(), woid]
+    );
+
+    return res.status(200).json({ success: true });
+  }
+
+  return res.status(400).json({ error: "Invalid action" });
+}
+);
 
       return res.status(201).json(result.rows[0]);
     }
