@@ -1,4 +1,5 @@
 export const runtime = "nodejs";
+
 import { Pool } from "pg";
 
 const pool = new Pool({
@@ -7,132 +8,213 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
-  // ✅ 1. Update CORS to allow POST
+  /* ==========================
+     CORS
+     ========================== */
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
 
   /* ======================================================
-     ✅ HANDLE POST: ONBOARD NEW PART
+     ✅ ADMIN: CREATE MASTER PART (EXPLICIT GATE)
+     POST /api/parts?admin=true
      ====================================================== */
-  if (req.method === "POST") {
+  if (req.method === "POST" && req.query.admin === "true") {
+    const {
+      partnumber,
+      manufacturer,
+      model,
+      description,
+      cost,
+      reorderlevel
+    } = req.body;
+
+    // ✅ Validation
+    if (!partnumber || !description) {
+      return res.status(400).json({
+        error: "partnumber and description are required"
+      });
+    }
+
     const client = await pool.connect();
+
     try {
-      const { 
-        partnumber, manufacturer, model, description, 
-        cost, reorderlevel, qty, cabinet, section, bin 
-      } = req.body;
-
-      await client.query("BEGIN"); // Start transaction
-
-      // A. Insert into masterparts
-      const partInsert = await client.query(
-        `INSERT INTO masterparts (partnumber, manufacturer, model, description, cost, reorderlevel)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING partid`,
-        [partnumber, manufacturer, model, description, cost, reorderlevel]
-      );
-      const newPartId = partInsert.rows[0].partid;
-
-      // B. Find or Insert Location (Assumes a 'locations' table exists)
-      // Note: You might need to adjust this depending on if you want to create 
-      // new locations on the fly or select existing IDs.
-      let locResult = await client.query(
-        `SELECT locationid FROM locations WHERE cabinet=$1 AND section=$2 AND bin=$3`,
-        [cabinet, section, bin]
+      // ✅ Enforce unique part number
+      const exists = await client.query(
+        `SELECT partid FROM masterparts WHERE partnumber = $1`,
+        [partnumber.trim()]
       );
 
-      let locationId;
-      if (locResult.rows.length > 0) {
-        locationId = locResult.rows[0].locationid;
-      } else {
-        const newLoc = await client.query(
-          `INSERT INTO locations (cabinet, section, bin) VALUES ($1, $2, $3) RETURNING locationid`,
-          [cabinet, section, bin]
-        );
-        locationId = newLoc.rows[0].locationid;
+      if (exists.rowCount > 0) {
+        return res.status(409).json({
+          error: "Part number already exists"
+        });
       }
 
-      // C. Link Part to Location with initial quantity
-      await client.query(
-        `INSERT INTO partlocations (partid, locationid, qty) VALUES ($1, $2, $3)`,
-        [newPartId, locationId, qty]
+      // ✅ Insert MASTER ONLY (no inventory, no locations)
+      const result = await client.query(
+        `
+        INSERT INTO masterparts
+          (partnumber, manufacturer, model, description, cost, reorderlevel)
+        VALUES
+          ($1, $2, $3, $4, $5, $6)
+        RETURNING partid, partnumber
+        `,
+        [
+          partnumber.trim(),
+          manufacturer?.trim() || null,
+          model?.trim() || null,
+          description.trim(),
+          Number(cost) || 0,
+          Number(reorderlevel) || 0
+        ]
       );
 
-      await client.query("COMMIT");
-      return res.status(201).json({ success: true, message: `Part ${partnumber} onboarded.` });
+      return res.status(201).json({
+        success: true,
+        partid: result.rows[0].partid,
+        partnumber: result.rows[0].partnumber
+      });
 
     } catch (err) {
-      await client.query("ROLLBACK");
-      console.error("POST ERROR:", err);
-      return res.status(500).json({ error: "Onboarding failed: " + err.message });
+      console.error("ADMIN PART CREATE ERROR:", err);
+      return res.status(500).json({
+        error: "Failed to create master part"
+      });
     } finally {
       client.release();
     }
   }
 
   /* ======================================================
-     ✅ HANDLE GET: SUMMARY & SEARCH
+     ❌ BLOCK ALL OTHER POSTs
+     ====================================================== */
+  if (req.method === "POST") {
+    return res.status(405).json({
+      error: "POST not allowed without admin=true"
+    });
+  }
+
+  /* ======================================================
+     ✅ OPS: GET HANDLERS
      ====================================================== */
   if (req.method === "GET") {
     const summary = req.query.summary;
     const search = req.query.search?.trim() || "";
 
-    // --- DASHBOARD SUMMARY ---
+    /* --------------------------
+       DASHBOARD INVENTORY SUMMARY
+       GET /api/parts?summary=inventory
+       -------------------------- */
     if (summary === "inventory") {
       try {
         const result = await pool.query(`
           SELECT
-            COUNT(*) FILTER (WHERE total_qty = 0) AS out_stock,
-            COUNT(*) FILTER (WHERE reorderlevel > 0 AND total_qty <= reorderlevel) AS low_stock
+            COUNT(*) FILTER (
+              WHERE total_qty = 0
+            ) AS out_stock,
+            COUNT(*) FILTER (
+              WHERE reorderlevel > 0 AND total_qty <= reorderlevel
+            ) AS low_stock
           FROM (
-            SELECT p.partid, COALESCE(SUM(pl.qty), 0) AS total_qty, p.reorderlevel
+            SELECT
+              p.partid,
+              COALESCE(SUM(pl.qty), 0) AS total_qty,
+              p.reorderlevel
             FROM masterparts p
             LEFT JOIN partlocations pl ON p.partid = pl.partid
             GROUP BY p.partid
           ) t;
         `);
+
         return res.status(200).json(result.rows[0]);
       } catch (err) {
-        return res.status(500).json({ error: "Summary failed" });
+        console.error("INVENTORY SUMMARY ERROR:", err);
+        return res.status(500).json({
+          error: "Inventory summary failed"
+        });
       }
     }
 
-    // --- SEARCH ---
-    if (search.length < 2) return res.status(200).json([]);
+    /* --------------------------
+       PART SEARCH
+       GET /api/parts?search=...
+       -------------------------- */
+    if (search.length < 2) {
+      return res.status(200).json([]);
+    }
 
-    let client;
+    const client = await pool.connect();
+
     try {
-      client = await pool.connect();
+      // ✅ Part master + total quantity
       const partsResult = await client.query(
-        `SELECT p.*, COALESCE(SUM(pl.qty), 0)::INTEGER AS total_qty
-         FROM masterparts p
-         LEFT JOIN partlocations pl ON pl.partid = p.partid
-         WHERE p.partnumber ILIKE $1 OR p.model ILIKE $1 OR p.description ILIKE $1
-         GROUP BY p.partid ORDER BY p.partnumber LIMIT 100`,
+        `
+        SELECT
+          p.partid,
+          p.partnumber,
+          p.manufacturer,
+          p.model,
+          p.description,
+          p.cost,
+          p.reorderlevel,
+          COALESCE(SUM(pl.qty), 0)::INTEGER AS total_qty
+        FROM masterparts p
+        LEFT JOIN partlocations pl ON pl.partid = p.partid
+        WHERE
+          p.partnumber ILIKE $1 OR
+          p.model ILIKE $1 OR
+          p.description ILIKE $1
+        GROUP BY p.partid
+        ORDER BY p.partnumber
+        LIMIT 100
+        `,
         [`%${search}%`]
       );
 
+      // ✅ Locations with inventory only
       const locationsResult = await client.query(
-        `SELECT pl.partid, l.cabinet, l.section, l.bin, pl.qty
-         FROM partlocations pl
-         JOIN locations l ON l.locationid = pl.locationid`
+        `
+        SELECT
+          pl.partid,
+          pl.locationid,
+          l.cabinet,
+          l.section,
+          l.bin,
+          pl.qty
+        FROM partlocations pl
+        JOIN locations l ON l.locationid = pl.locationid
+        WHERE pl.qty > 0
+        `
       );
 
       const parts = partsResult.rows.map(p => ({
         ...p,
-        locations: locationsResult.rows.filter(l => l.partid === p.partid)
+        locations: locationsResult.rows.filter(
+          l => l.partid === p.partid
+        )
       }));
 
       return res.status(200).json(parts);
+
     } catch (err) {
-      return res.status(500).json({ error: "Search failed" });
+      console.error("PART SEARCH ERROR:", err);
+      return res.status(500).json({
+        error: "Failed to fetch parts"
+      });
     } finally {
-      if (client) client.release();
+      client.release();
     }
   }
 
-  // Final fallback
-  return res.status(405).json({ error: "Method not allowed" });
+  /* ======================================================
+     FALLBACK
+     ====================================================== */
+  return res.status(405).json({
+    error: "Method not allowed"
+  });
 }
