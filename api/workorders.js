@@ -102,50 +102,49 @@ if (req.query.history === "true") {
       }
 
       /* ---------- CLOSE WORK ORDER ---------- */
-      if (action === "close") {
-        const { woid, workperformed } = req.body;
+if (action === "close") {
+  const { woid, workperformed, workedBy } = req.body;
 
-        if (!woid || !workperformed || !workperformed.trim()) {
-          return res.status(400).json({
-            error: "woid and workperformed are required"
-          });
-        }
+  if (!woid || !workperformed || !workedBy) {
+    return res.status(400).json({
+      error: "woid, workperformed, and workedBy are required"
+    });
+  }
 
-        const check = await pool.query(
-          `SELECT status FROM workorders WHERE woid = $1`,
-          [woid]
-        );
+  const check = await pool.query(
+    `SELECT status FROM workorders WHERE woid = $1`,
+    [woid]
+  );
 
-        if (check.rowCount === 0) {
-          return res.status(404).json({ error: "Work order not found" });
-        }
+  if (check.rowCount === 0) {
+    return res.status(404).json({ error: "Work order not found" });
+  }
 
-        if (check.rows[0].status !== 1) {
-          return res.status(409).json({
-            error: "Work order is already closed"
-          });
-        }
+  if (check.rows[0].status !== 1) {
+    return res.status(409).json({
+      error: "Work order is already closed"
+    });
+  }
 
-       await pool.query(
-  `
-  UPDATE workorders
-  SET
-    workperformed = $1,
-    workperformed_by = $2,
-    status = 2,
-    closeddate = CURRENT_DATE
-  WHERE woid = $3
-  `,
-  [
-    workperformed.trim(),  // $1
-    workedBy,              // $2
-    woid                   // $3
-  ]
-);
+  await pool.query(
+    `
+    UPDATE workorders
+    SET
+      workperformed = $1,
+      workperformed_by = $2,
+      status = 2,
+      closeddate = CURRENT_DATE
+    WHERE woid = $3
+    `,
+    [
+      workperformed.trim(), // $1
+      workedBy,              // $2
+      woid                   // $3
+    ]
+  );
 
-        return res.status(200).json({ success: true });
-      }
-
+  return res.status(200).json({ success: true });
+}
       return res.status(400).json({ error: "Invalid action" });
     }
 
