@@ -6,7 +6,7 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
-  // ✅ CORS
+  // ✅ CORS (required for GitHub Pages → Vercel)
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -23,15 +23,19 @@ export default async function handler(req, res) {
     const result = await pool.query(`
       SELECT
         id,
-        name
+        TRIM(firstname || ' ' || lastname) AS name,
+        initials,
+        skilllevel
       FROM technicians
-      ORDER BY name
+      ORDER BY lastname, firstname
     `);
 
     return res.status(200).json(result.rows);
 
   } catch (err) {
     console.error("Technicians API error:", err);
-    return res.status(500).json({ error: "Failed to load technicians" });
+    return res.status(500).json({
+      error: err.message
+    });
   }
 }
