@@ -6,7 +6,9 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
-  // ✅ CORS (must be first)
+  /* ==========================
+     CORS
+     ========================== */
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -16,10 +18,36 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ==========================
-    // GET – list work orders
-    // ==========================
+    /* ======================================================
+       GET – WORK ORDERS
+       ====================================================== */
     if (req.method === "GET") {
+
+      /* ---------- HISTORY MODE (READ-ONLY) ---------- */
+      if (req.query.history === "true") {
+        const result = await pool.query(`
+          SELECT
+            w.woid,
+            a.assetname,
+            w.description,
+            wt.type AS type,
+            p.priority AS priority,
+            w.opendate,
+            w.closeddate,
+            w.workperformed
+          FROM workorders w
+          LEFT JOIN assets a ON a.assetid = w.assetid
+          LEFT JOIN wotypes wt ON wt.id = w.wotype
+          LEFT JOIN wopriorities p ON p.id = w.priority
+          WHERE w.status = 2
+          ORDER BY w.closeddate DESC
+          LIMIT 500
+        `);
+
+        return res.status(200).json(result.rows);
+      }
+
+      /* ---------- DEFAULT (ACTIVE / ALL) ---------- */
       const result = await pool.query(`
         SELECT
           w.woid,
@@ -40,13 +68,13 @@ export default async function handler(req, res) {
       return res.status(200).json(result.rows);
     }
 
-    // ==========================
-    // POST – create OR close
-    // ==========================
+    /* ======================================================
+       POST – CREATE OR CLOSE WORK ORDER
+       ====================================================== */
     if (req.method === "POST") {
       const { action } = req.body;
 
-      // -------- CREATE WORK ORDER --------
+      /* ---------- CREATE WORK ORDER ---------- */
       if (!action || action === "create") {
         const { assetid, description, wotype, priority, duedate } = req.body;
 
@@ -70,7 +98,7 @@ export default async function handler(req, res) {
         return res.status(201).json(result.rows[0]);
       }
 
-      // -------- CLOSE WORK ORDER --------
+      /* ---------- CLOSE WORK ORDER ---------- */
       if (action === "close") {
         const { woid, workperformed } = req.body;
 
