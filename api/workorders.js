@@ -126,18 +126,22 @@ if (req.query.history === "true") {
           });
         }
 
-        await pool.query(
-          `
-         UPDATE workorders
-SET
-  workperformed = $1,
-  workperformed_by = $2,
-  status = 2,
-  closeddate = CURRENT_DATE
-WHERE woid = $3
-          `,
-          [workperformed.trim(), woid]
-        );
+       await pool.query(
+  `
+  UPDATE workorders
+  SET
+    workperformed = $1,
+    workperformed_by = $2,
+    status = 2,
+    closeddate = CURRENT_DATE
+  WHERE woid = $3
+  `,
+  [
+    workperformed.trim(),  // $1
+    workedBy,              // $2
+    woid                   // $3
+  ]
+);
 
         return res.status(200).json({ success: true });
       }
