@@ -41,6 +41,7 @@ if (req.query.history === "true") {
     LEFT JOIN assets a ON a.assetid = w.assetid
     LEFT JOIN wotypes wt ON wt.id = w.wotype
     LEFT JOIN wopriorities p ON p.id = w.priority
+    LEFT JOIN technicians t ON t.id = w.workperformed_by
     WHERE w.status IN (2, 3)
     ORDER BY w.closeddate DESC
     LIMIT 500
