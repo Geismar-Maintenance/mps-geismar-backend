@@ -127,15 +127,13 @@ if (req.query.history === "true") {
 
         await pool.query(
           `
-          UPDATE workorders
-          SET
-            workperformed = $1,
-            status = 2,
-            closeddate = CURRENT_DATE,
-            islate = (
-              duedate IS NOT NULL AND CURRENT_DATE > duedate
-            )
-          WHERE woid = $2
+         UPDATE workorders
+SET
+  workperformed = $1,
+  workperformed_by = $2,
+  status = 2,
+  closeddate = CURRENT_DATE
+WHERE woid = $3
           `,
           [workperformed.trim(), woid]
         );
