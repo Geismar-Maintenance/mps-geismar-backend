@@ -41,7 +41,7 @@ if (req.query.history === "true") {
     LEFT JOIN wotypes wt ON wt.id = w.wotype
     LEFT JOIN wopriorities p ON p.id = w.priority
     INNER JOIN wostatus s ON s.id = w.status
-    WHERE s.status = 'Completed'
+    WHERE s.status = 'Completed', 'Closed'
     ORDER BY w.closeddate DESC
     LIMIT 500
   `);
