@@ -72,6 +72,51 @@ export default async function handler(req, res) {
     const action = url.searchParams.get("action");
 
     /* ======================================================
+   GET /api/pm?action=status
+   READ-ONLY PM STATUS (NO ENGINE LOGIC)
+   ====================================================== */
+if (req.method === "GET" && action === "status") {
+  try {
+    const result = await pool.query(`
+      SELECT
+        pi.pm_instance_id,
+        pi.asset_id,
+        a.assetname AS asset_name,
+        pb.block_hours AS pm_block_hours,
+        pi.status,
+        pi.execution_allowed,
+        pi.completion_percentage,
+        pi.has_exceptions,
+        pi.auto_completed,
+
+        CASE
+          WHEN pi.status = 'completed' THEN 'completed'
+          WHEN pi.execution_allowed = true THEN 'execution'
+          ELSE 'planning'
+        END AS phase
+
+      FROM pm_instances pi
+      JOIN assets a
+        ON a.assetid = pi.asset_id
+      JOIN pm_blocks pb
+        ON pb.pm_block_id = pi.pm_block_id
+      ORDER BY
+        pi.status,
+        pb.block_hours,
+        a.assetname;
+    `);
+
+    return res.status(200).json(result.rows);
+
+  } catch (err) {
+    console.error("PM STATUS ERROR:", err);
+    return res.status(500).json({
+      error: "Failed to load PM status"
+    });
+  }
+}
+    
+    /* ======================================================
        POST /api/pm?action=run
        ====================================================== */
     if (req.method === "POST" && action === "run") {
@@ -366,3 +411,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "PM engine failed" });
   }
 }
+
