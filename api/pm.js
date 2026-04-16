@@ -191,6 +191,97 @@ await pool.query(
     currentBlock.pm_block_id
   ]
 );
+
+// ------------------------------------------
+// PHASE 4: Auto-Completion
+// ------------------------------------------
+if (phase === "auto-complete") {
+  // 1. Lock execution permanently
+  await pool.query(
+    `
+    UPDATE pm_instances
+    SET execution_allowed = false
+    WHERE pm_template_id = $1
+      AND pm_block_id = $2
+      AND status = 'active'
+    `,
+    [
+      asset.pm_template_id,
+      currentBlock.pm_block_id
+    ]
+  );
+
+  // 2. Calculate completion percentage
+  const completionResult = await pool.query(
+    `
+    SELECT
+      COUNT(*) FILTER (WHERE pti.completed = true)::FLOAT
+      /
+      NULLIF(COUNT(*), 0) * 100 AS completion_percentage
+    FROM pm_task_instances pti
+    JOIN pm_instances pi
+      ON pi.pm_instance_id = pti.pm_instance_id
+    WHERE
+      pi.pm_template_id = $1
+      AND pi.pm_block_id = $2
+      AND pi.status = 'active'
+    `,
+    [
+      asset.pm_template_id,
+      currentBlock.pm_block_id
+    ]
+  );
+
+  const completionPercentage =
+    completionResult.rows[0].completion_percentage || 0;
+
+  // 3. Detect exceptions
+  const exceptionResult = await pool.query(
+    `
+    SELECT COUNT(*) AS exception_count
+    FROM pm_task_requirement_instances pri
+    JOIN pm_task_instances pti
+      ON pti.pm_task_instance_id = pri.pm_task_instance_id
+    JOIN pm_instances pi
+      ON pi.pm_instance_id = pti.pm_instance_id
+    WHERE
+      pi.pm_template_id = $1
+      AND pi.pm_block_id = $2
+      AND pri.has_exception = true
+    `,
+    [
+      asset.pm_template_id,
+      currentBlock.pm_block_id
+    ]
+  );
+
+  const hasExceptions =
+    Number(exceptionResult.rows[0].exception_count) > 0;
+
+  // 4. Complete PM instance
+  await pool.query(
+    `
+    UPDATE pm_instances
+    SET
+      status = 'completed',
+      completion_type = 'auto',
+      completed_at = $3,
+      completion_percentage = $4,
+      has_exceptions = $5
+    WHERE
+      pm_template_id = $1
+      AND pm_block_id = $2
+      AND status = 'active'
+    `,
+    [
+      asset.pm_template_id,
+      currentBlock.pm_block_id,
+      executionEnd,
+      completionPercentage,
+      hasExceptions
+    ]
+  );
+}
         
         /* ------------------------------------------
            PHASE 2: Create PM instance + WO (planning)
