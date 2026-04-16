@@ -170,7 +170,28 @@ export default async function handler(req, res) {
         } else if (today > executionEnd) {
           phase = "auto-complete";
         }
+// ------------------------------------------
+// PHASE 3: Execution Window Enforcement
+// ------------------------------------------
+const executionAllowed =
+  today >= executionStart && today <= executionEnd;
 
+// Persist execution permission on active PM instance
+await pool.query(
+  `
+  UPDATE pm_instances
+  SET execution_allowed = $1
+  WHERE pm_template_id = $2
+    AND pm_block_id = $3
+    AND status = 'active'
+  `,
+  [
+    executionAllowed,
+    asset.pm_template_id,
+    currentBlock.pm_block_id
+  ]
+);
+        
         /* ------------------------------------------
            PHASE 2: Create PM instance + WO (planning)
            ------------------------------------------ */
