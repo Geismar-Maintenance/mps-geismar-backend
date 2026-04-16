@@ -79,7 +79,7 @@ export default async function handler(req, res) {
        PHASE 1 + PHASE 2
        ====================================================== */
     if (req.method === "POST" && action === "run") {
-      const today = getLocalToday();
+      const today = addDays(executionEnd, 1);
 
       /* ------------------------------------------
          Load manufacturing assets with PM templates
