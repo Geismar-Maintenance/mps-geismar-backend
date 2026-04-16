@@ -232,23 +232,32 @@ await pool.query(
               pmInstanceResult.rows[0].pm_instance_id;
 
             /* Create Work Order */
-            const woResult = await pool.query(
-              `
-              INSERT INTO workorders (
-                assetid,
-                description,
-                status,
-                pm_instance_id
-              )
-              VALUES ($1, $2, 1, $3)
-              RETURNING woid
-              `,
-              [
-                asset.assetid,
-                `${currentBlock.block_hours}-Hour Preventive Maintenance`,
-                pmInstanceId
-              ]
-            );
+            const PM_TYPE_ID = 1;      // Preventive Maintenance
+const PM_PRIORITY_ID = 2;  // PM / Medium
+
+const woResult = await pool.query(
+  `
+  INSERT INTO workorders (
+    assetid,
+    description,
+    wotype,
+    priority,
+    duedate,
+    status,
+    pm_instance_id
+  )
+  VALUES ($1, $2, $3, $4, $5, 1, $6)
+  RETURNING woid
+  `,
+  [
+    asset.assetid,
+    `${currentBlock.block_hours}-Hour Preventive Maintenance`,
+    PM_TYPE_ID,
+    PM_PRIORITY_ID,
+    dueFriday,          // ✅ This is the correct PM due date
+    pmInstanceId
+  ]
+);
 
             actionTaken = `PM instance ${pmInstanceId} and WO ${woResult.rows[0].woid} created`;
           }
