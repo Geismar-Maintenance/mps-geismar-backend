@@ -8,7 +8,7 @@ const pool = new Pool({
 });
 
 /* ======================================================
-   Utility helpers (local plant time: America/Chicago)
+   Date helpers (local plant time)
    ====================================================== */
 
 function getLocalToday() {
@@ -20,6 +20,13 @@ function getLocalToday() {
   return local;
 }
 
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 function getDueFriday(date) {
   const d = new Date(date);
   const day = d.getDay(); // Sun=0 ... Fri=5
@@ -29,21 +36,14 @@ function getDueFriday(date) {
   return d;
 }
 
-function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 /* ======================================================
-   Helper: check if PM instance already exists
+   Helper: check PM instance existence
    ====================================================== */
 
 async function pmInstanceExists(pool, templateId, blockId) {
   const res = await pool.query(
     `
-    SELECT pm_instance_id
+    SELECT 1
     FROM pm_instances
     WHERE pm_template_id = $1
       AND pm_block_id = $2
@@ -55,13 +55,10 @@ async function pmInstanceExists(pool, templateId, blockId) {
 }
 
 /* ======================================================
-   Main handler
+   MAIN HANDLER
    ====================================================== */
 
 export default async function handler(req, res) {
-  /* ==========================
-     CORS
-     ========================== */
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -76,14 +73,10 @@ export default async function handler(req, res) {
 
     /* ======================================================
        POST /api/pm?action=run
-       PHASE 1 + PHASE 2
        ====================================================== */
     if (req.method === "POST" && action === "run") {
-      const today = addDays(executionEnd, 1);
+      const today = getLocalToday();
 
-      /* ------------------------------------------
-         Load manufacturing assets with PM templates
-         ------------------------------------------ */
       const assetsResult = await pool.query(`
         SELECT
           a.assetid,
@@ -101,6 +94,7 @@ export default async function handler(req, res) {
       const evaluations = [];
 
       for (const asset of assetsResult.rows) {
+
         /* ------------------------------------------
            Load PM blocks
            ------------------------------------------ */
@@ -138,15 +132,14 @@ export default async function handler(req, res) {
           }
         }
 
-        // Wrap after highest block (8000)
         if (!currentBlock) {
-          currentBlock = blocksResult.rows[0];
+          currentBlock = blocksResult.rows[0]; // wrap after 8000
         }
 
         /* ------------------------------------------
-           Forecast Due Friday (temporary avg)
+           Forecast due dates
            ------------------------------------------ */
-        const AVG_HOURS_PER_WEEK = 100; // placeholder until weekly data wired
+        const AVG_HOURS_PER_WEEK = 100;
         const hoursRemaining = currentBlock.block_hours - runtime;
         const weeksToDue = hoursRemaining / AVG_HOURS_PER_WEEK;
 
@@ -161,7 +154,7 @@ export default async function handler(req, res) {
         const executionEnd = addDays(dueFriday, 9);
 
         /* ------------------------------------------
-           Determine PM phase
+           Phase classification
            ------------------------------------------ */
         let phase = "planning";
 
@@ -170,30 +163,30 @@ export default async function handler(req, res) {
         } else if (today > executionEnd) {
           phase = "auto-complete";
         }
-// ------------------------------------------
-// PHASE 3: Execution Window Enforcement
-// ------------------------------------------
-const executionAllowed =
-  today >= executionStart && today <= executionEnd;
 
-// Persist execution permission on active PM instance
-await pool.query(
-  `
-  UPDATE pm_instances
-  SET execution_allowed = $1
-  WHERE pm_template_id = $2
-    AND pm_block_id = $3
-    AND status = 'active'
-  `,
-  [
-    executionAllowed,
-    asset.pm_template_id,
-    currentBlock.pm_block_id
-  ]
-);
-    
         /* ------------------------------------------
-           PHASE 2: Create PM instance + WO (planning)
+           PHASE 3: Execution window enforcement
+           ------------------------------------------ */
+        const executionAllowed =
+          today >= executionStart && today <= executionEnd;
+
+        await pool.query(
+          `
+          UPDATE pm_instances
+          SET execution_allowed = $1
+          WHERE pm_template_id = $2
+            AND pm_block_id = $3
+            AND status = 'active'
+          `,
+          [
+            executionAllowed,
+            asset.pm_template_id,
+            currentBlock.pm_block_id
+          ]
+        );
+
+        /* ------------------------------------------
+           PHASE 2: Create PM + WO (planning)
            ------------------------------------------ */
         let actionTaken = null;
 
@@ -205,7 +198,6 @@ await pool.query(
           );
 
           if (!exists) {
-            /* Create PM instance */
             const pmInstanceResult = await pool.query(
               `
               INSERT INTO pm_instances (
@@ -215,9 +207,10 @@ await pool.query(
                 trigger_value,
                 status,
                 auto_completed,
+                execution_allowed,
                 created_at
               )
-              VALUES ($1, $2, $3, $4, 'active', false, NOW())
+              VALUES ($1, $2, $3, $4, 'active', false, false, NOW())
               RETURNING pm_instance_id
               `,
               [
@@ -231,35 +224,118 @@ await pool.query(
             const pmInstanceId =
               pmInstanceResult.rows[0].pm_instance_id;
 
-            /* Create Work Order */
-            const PM_TYPE_ID = 1;      // Preventive Maintenance
-const PM_PRIORITY_ID = 2;  // PM / Medium
+            const PM_TYPE_ID = 1;
+            const PM_PRIORITY_ID = 2;
 
-const woResult = await pool.query(
-  `
-  INSERT INTO workorders (
-    assetid,
-    description,
-    wotype,
-    priority,
-    duedate,
-    status,
-    pm_instance_id
-  )
-  VALUES ($1, $2, $3, $4, $5, 1, $6)
-  RETURNING woid
-  `,
-  [
-    asset.assetid,
-    `${currentBlock.block_hours}-Hour Preventive Maintenance`,
-    PM_TYPE_ID,
-    PM_PRIORITY_ID,
-    dueFriday,          // ✅ This is the correct PM due date
-    pmInstanceId
-  ]
-);
+            const woResult = await pool.query(
+              `
+              INSERT INTO workorders (
+                assetid,
+                description,
+                wotype,
+                priority,
+                duedate,
+                status,
+                pm_instance_id
+              )
+              VALUES ($1, $2, $3, $4, $5, 1, $6)
+              RETURNING woid
+              `,
+              [
+                asset.assetid,
+                `${currentBlock.block_hours}-Hour Preventive Maintenance`,
+                PM_TYPE_ID,
+                PM_PRIORITY_ID,
+                dueFriday,
+                pmInstanceId
+              ]
+            );
 
-            actionTaken = `PM instance ${pmInstanceId} and WO ${woResult.rows[0].woid} created`;
+            actionTaken = `PM ${pmInstanceId}, WO ${woResult.rows[0].woid} created`;
+          }
+        }
+
+        /* ------------------------------------------
+           PHASE 4: Auto-completion (late PMs)
+           ------------------------------------------ */
+        if (phase === "auto-complete") {
+          const alreadyCompleted = await pool.query(
+            `
+            SELECT 1
+            FROM pm_instances
+            WHERE pm_template_id = $1
+              AND pm_block_id = $2
+              AND status = 'completed'
+            `,
+            [asset.pm_template_id, currentBlock.pm_block_id]
+          );
+
+          if (alreadyCompleted.rowCount === 0) {
+
+            const completionResult = await pool.query(
+              `
+              SELECT
+                COUNT(*) FILTER (WHERE pti.completed = true)::FLOAT
+                /
+                NULLIF(COUNT(*), 0) * 100 AS completion_percentage
+              FROM pm_task_instances pti
+              JOIN pm_instances pi
+                ON pi.pm_instance_id = pti.pm_instance_id
+              WHERE
+                pi.pm_template_id = $1
+                AND pi.pm_block_id = $2
+                AND pi.status = 'active'
+              `,
+              [asset.pm_template_id, currentBlock.pm_block_id]
+            );
+
+            const completionPercentage =
+              completionResult.rows[0].completion_percentage || 0;
+
+            let hasExceptions = false;
+            try {
+              const ex = await pool.query(
+                `
+                SELECT COUNT(*) AS cnt
+                FROM pm_task_requirement_instances pri
+                JOIN pm_task_instances pti
+                  ON pti.pm_task_instance_id = pri.pm_task_instance_id
+                JOIN pm_instances pi
+                  ON pi.pm_instance_id = pti.pm_instance_id
+                WHERE
+                  pi.pm_template_id = $1
+                  AND pi.pm_block_id = $2
+                  AND pri.has_exception = true
+                `,
+                [asset.pm_template_id, currentBlock.pm_block_id]
+              );
+              hasExceptions = Number(ex.rows[0].cnt) > 0;
+            } catch {}
+
+            await pool.query(
+              `
+              UPDATE pm_instances
+              SET
+                status = 'completed',
+                auto_completed = true,
+                completion_type = 'auto',
+                completed_at = $3,
+                completion_percentage = $4,
+                execution_allowed = false,
+                has_exceptions = $5
+              WHERE
+                pm_template_id = $1
+                AND pm_block_id = $2
+                AND status = 'active'
+              `,
+              [
+                asset.pm_template_id,
+                currentBlock.pm_block_id,
+                executionEnd,
+                completionPercentage,
+                hasExceptions
+              ]
+            );
           }
         }
 
@@ -268,59 +344,12 @@ const woResult = await pool.query(
           pm_block_hours: currentBlock.block_hours,
           runtime_hours: runtime,
           due_friday: dueFriday.toISOString().slice(0, 10),
-          generation_date: generationDate.toISOString().slice(0, 10),
           execution_start: executionStart.toISOString().slice(0, 10),
           execution_end: executionEnd.toISOString().slice(0, 10),
           phase,
           action_taken: actionTaken
         });
       }
-
-      // ------------------------------------------
-// PHASE 4: Auto-Completion
-// ------------------------------------------
-// Skip if PM already completed
-if (phase === "auto-complete") {
-  const alreadyCompleted = await pool.query(
-    `
-    SELECT 1
-    FROM pm_instances
-    WHERE pm_template_id = $1
-      AND pm_block_id = $2
-      AND status = 'completed'
-    `,
-    [asset.pm_template_id, currentBlock.pm_block_id]
-  );
-
-  if (alreadyCompleted.rowCount > 0) {
-    continue;
-  }
-}
-  // 1. Lock execution permanently
-  await pool.query(
-  `
-  UPDATE pm_instances
-  SET
-    status = 'completed',
-    auto_completed = true,
-    completion_type = 'auto',
-    completed_at = $3,
-    completion_percentage = $4,
-    execution_allowed = false,
-    has_exceptions = $5
-  WHERE
-    pm_template_id = $1
-    AND pm_block_id = $2
-    AND status = 'active'
-  `,
-  [
-    asset.pm_template_id,
-    currentBlock.pm_block_id,
-    executionEnd,
-    completionPercentage,
-    hasExceptions
-  ]
-);
 
       return res.status(200).json({
         success: true,
@@ -337,5 +366,3 @@ if (phase === "auto-complete") {
     return res.status(500).json({ error: "PM engine failed" });
   }
 }
-
-
