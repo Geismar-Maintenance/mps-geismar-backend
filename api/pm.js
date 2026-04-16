@@ -191,53 +191,7 @@ await pool.query(
     currentBlock.pm_block_id
   ]
 );
-
-// ------------------------------------------
-// PHASE 4: Auto-Completion
-// ------------------------------------------
-// Skip if PM already completed
-if (phase === "auto-complete") {
-  const alreadyCompleted = await pool.query(
-    `
-    SELECT 1
-    FROM pm_instances
-    WHERE pm_template_id = $1
-      AND pm_block_id = $2
-      AND status = 'completed'
-    `,
-    [asset.pm_template_id, currentBlock.pm_block_id]
-  );
-
-  if (alreadyCompleted.rowCount > 0) {
-    continue;
-  }
-}
-  // 1. Lock execution permanently
-  await pool.query(
-  `
-  UPDATE pm_instances
-  SET
-    status = 'completed',
-    auto_completed = true,
-    completion_type = 'auto',
-    completed_at = $3,
-    completion_percentage = $4,
-    execution_allowed = false,
-    has_exceptions = $5
-  WHERE
-    pm_template_id = $1
-    AND pm_block_id = $2
-    AND status = 'active'
-  `,
-  [
-    asset.pm_template_id,
-    currentBlock.pm_block_id,
-    executionEnd,
-    completionPercentage,
-    hasExceptions
-  ]
-);
-        
+    
         /* ------------------------------------------
            PHASE 2: Create PM instance + WO (planning)
            ------------------------------------------ */
@@ -322,6 +276,52 @@ const woResult = await pool.query(
         });
       }
 
+      // ------------------------------------------
+// PHASE 4: Auto-Completion
+// ------------------------------------------
+// Skip if PM already completed
+if (phase === "auto-complete") {
+  const alreadyCompleted = await pool.query(
+    `
+    SELECT 1
+    FROM pm_instances
+    WHERE pm_template_id = $1
+      AND pm_block_id = $2
+      AND status = 'completed'
+    `,
+    [asset.pm_template_id, currentBlock.pm_block_id]
+  );
+
+  if (alreadyCompleted.rowCount > 0) {
+    continue;
+  }
+}
+  // 1. Lock execution permanently
+  await pool.query(
+  `
+  UPDATE pm_instances
+  SET
+    status = 'completed',
+    auto_completed = true,
+    completion_type = 'auto',
+    completed_at = $3,
+    completion_percentage = $4,
+    execution_allowed = false,
+    has_exceptions = $5
+  WHERE
+    pm_template_id = $1
+    AND pm_block_id = $2
+    AND status = 'active'
+  `,
+  [
+    asset.pm_template_id,
+    currentBlock.pm_block_id,
+    executionEnd,
+    completionPercentage,
+    hasExceptions
+  ]
+);
+
       return res.status(200).json({
         success: true,
         run_date: today.toISOString().slice(0, 10),
@@ -337,3 +337,5 @@ const woResult = await pool.query(
     return res.status(500).json({ error: "PM engine failed" });
   }
 }
+
+
