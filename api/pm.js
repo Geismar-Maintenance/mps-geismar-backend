@@ -18,12 +18,13 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
+  const action = req.query.action;
 
  /* ======================================================
      POST /api/pm/run
      PHASE 1: DISCOVERY / DRY RUN
      ====================================================== */
-  if (req.method === "POST" && req.url.endsWith("/run")) {
+  if (req.method === "POST" && action === "run")) {
     const today = getLocalToday();
 
     try {
