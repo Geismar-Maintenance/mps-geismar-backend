@@ -1,4 +1,3 @@
-export const runtime = "nodejs";
 
 import { Pool } from "pg";
 
@@ -7,7 +6,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // ✅ CORS (TEMPORARY, PM ONLY)
   res.setHeader('Access-Control-Allow-Origin',"*");
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
