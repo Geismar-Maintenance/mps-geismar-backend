@@ -7,6 +7,17 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+
+res.setHeader('Access-Control-Allow-Origin', 'https://geismar-maintenance.github.io');
+res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+
+if (req.method === 'OPTIONS') {
+  return res.status(200).end();
+}
+ const { action } = req.query;
+
 /* ======================================================
    Date helpers (local plant time)
    ====================================================== */
