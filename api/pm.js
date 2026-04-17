@@ -1,3 +1,4 @@
+export const runtime = "nodejs";
 
 import { Pool } from "pg";
 
@@ -6,18 +7,17 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-module.exports = async function handler(req, res) {
-  // ✅ CORS (TEMPORARY, PM ONLY)
-  res.setHeader('Access-Control-Allow-Origin',"*");
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "https://geismar-maintenance.github.io");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // ✅ Preflight
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
   const { action } = req.query;
+}
 
   /* ======================================================
      Date helpers (local plant time)
