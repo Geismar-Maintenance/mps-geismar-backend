@@ -10,8 +10,7 @@ const pool = new Pool({
 export default async function handler(req, res) {
   // ✅ CORS (TEMPORARY, PM ONLY)
   res.setHeader(
-    'Access-Control-Allow-Origin',
-    'https://geismar-maintenance.github.io'
+    'Access-Control-Allow-Origin','*'
   );
   res.setHeader(
     'Access-Control-Allow-Methods',
