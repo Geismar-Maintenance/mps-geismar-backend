@@ -412,3 +412,39 @@ if (req.method === "GET" && action === "status") {
   }
 }
 
+   /* ------------------------------------------
+           Get PM Templates
+           ------------------------------------------ */
+if (req.method === 'GET' && action === 'adminLoad') {
+  try {
+    const templates = await pool.query(`
+      SELECT
+        pt.pm_template_id,
+        a.assetname,
+        pt.pm_engine_type,
+        pt.active
+      FROM pm_templates pt
+      JOIN assets a ON a.assetid = pt.asset_id
+      ORDER BY a.assetname
+    `);
+
+    const tiers = await pool.query(`
+      SELECT
+        pm_task_tier_id,
+        tier_name,
+        tier_order
+      FROM pm_task_tiers
+      ORDER BY tier_order
+    `);
+
+    return res.status(200).json({
+      templates: templates.rows,
+      tiers: tiers.rows
+    });
+
+  } catch (err) {
+    console.error('PM adminLoad error:', err);
+    return res.status(500).json({ error: 'Failed to load PM admin data' });
+  }
+}
+
