@@ -7,22 +7,9 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  const { action } = req.query;
-}
-
   /* ======================================================
      Date helpers (local plant time)
      ====================================================== */
-
 
 function getLocalToday() {
   const now = new Date();
@@ -53,7 +40,7 @@ function getDueFriday(date) {
    Helper: check PM instance existence
    ====================================================== */
 
-async function pmInstanceExists(pool, templateId, blockId) {
+async function pmInstanceExists(templateId, blockId) {
   const res = await pool.query(
     `
     SELECT 1
@@ -83,6 +70,42 @@ export default async function handler(req, res) {
   try {
     const url = new URL(req.url, "http://localhost");
     const action = url.searchParams.get("action");
+
+       /* ------------------------------------------
+           Get PM Templates
+           ------------------------------------------ */
+if (req.method === 'GET' && action === 'adminLoad') {
+  try {
+    const templates = await pool.query(`
+      SELECT
+        pt.pm_template_id,
+        a.assetname,
+        pt.pm_engine_type,
+        pt.active
+      FROM pm_templates pt
+      JOIN assets a ON a.assetid = pt.asset_id
+      ORDER BY a.assetname
+    `);
+
+    const tiers = await pool.query(`
+      SELECT
+        pm_task_tier_id,
+        tier_name,
+        tier_order
+      FROM pm_task_tiers
+      ORDER BY tier_order
+    `);
+
+    return res.status(200).json({
+      templates: templates.rows,
+      tiers: tiers.rows
+    });
+
+  } catch (err) {
+    console.error('PM adminLoad error:', err);
+    return res.status(500).json({ error: 'Failed to load PM admin data' });
+  }
+}
 
     /* ======================================================
    GET /api/pm?action=status
@@ -422,42 +445,6 @@ if (req.method === "GET" && action === "status") {
   } catch (err) {
     console.error("PM ENGINE ERROR:", err);
     return res.status(500).json({ error: "PM engine failed" });
-  }
-}
-
-   /* ------------------------------------------
-           Get PM Templates
-           ------------------------------------------ */
-if (req.method === 'GET' && action === 'adminLoad') {
-  try {
-    const templates = await pool.query(`
-      SELECT
-        pt.pm_template_id,
-        a.assetname,
-        pt.pm_engine_type,
-        pt.active
-      FROM pm_templates pt
-      JOIN assets a ON a.assetid = pt.asset_id
-      ORDER BY a.assetname
-    `);
-
-    const tiers = await pool.query(`
-      SELECT
-        pm_task_tier_id,
-        tier_name,
-        tier_order
-      FROM pm_task_tiers
-      ORDER BY tier_order
-    `);
-
-    return res.status(200).json({
-      templates: templates.rows,
-      tiers: tiers.rows
-    });
-
-  } catch (err) {
-    console.error('PM adminLoad error:', err);
-    return res.status(500).json({ error: 'Failed to load PM admin data' });
   }
 }
 
