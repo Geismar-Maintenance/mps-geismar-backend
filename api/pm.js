@@ -107,6 +107,38 @@ if (req.method === 'GET' && action === 'adminLoad') {
   }
 }
 
+    /* ================================
+   ADMIN: TEMPLATE HEALTH CHECK
+   ================================ */
+if (req.method === "GET" && action === "templateHealth") {
+  const templateId = Number(req.query.templateId);
+  const warnings = [];
+
+  try {
+    const blocks = await pool.query(
+      `SELECT 1 FROM pm_blocks WHERE pm_template_id = $1 LIMIT 1`,
+      [templateId]
+    );
+    if (blocks.rowCount === 0) {
+      warnings.push("No trigger blocks defined");
+    }
+
+    const tasks = await pool.query(
+      `SELECT 1 FROM pm_task_templates WHERE pm_template_id = $1 LIMIT 1`,
+      [templateId]
+    );
+    if (tasks.rowCount === 0) {
+      warnings.push("No PM tasks defined");
+    }
+
+    return res.status(200).json({ warnings });
+
+  } catch (err) {
+    console.error("Template health error:", err);
+    return res.status(500).json({ error: "Failed to evaluate template health" });
+  }
+}
+
     /* ======================================================
    GET /api/pm?action=status
    READ-ONLY PM STATUS (NO ENGINE LOGIC)
