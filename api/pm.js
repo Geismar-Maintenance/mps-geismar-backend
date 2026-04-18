@@ -256,13 +256,12 @@ if (req.method === "POST" && action === "addTaskTier") {
   await pool.query(
     `
     INSERT INTO pm_task_tiers (
-      pm_template_id,
       tier_name,
       tier_order
     )
-    VALUES ($1, $2, $3)
+    VALUES ($1, $2)
     `,
-    [pm_template_id, tier_name, tier_order]
+    [tier_name, tier_order]
   );
 
   return res.status(200).json({ success: true });
