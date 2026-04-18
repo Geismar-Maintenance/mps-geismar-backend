@@ -292,6 +292,58 @@ if (req.method === "POST" && action === "addTaskTier") {
 
   return res.status(200).json({ success: true });
 }
+
+    if (req.method === "GET" && action === "getTasks") {
+  const templateId = Number(req.query.templateId);
+
+  const tasks = await pool.query(`
+    SELECT
+      t.pm_task_template_id,
+      t.task_description,
+      t.discipline,
+      tr.tier_name
+    FROM pm_task_templates t
+    JOIN pm_task_tiers tr
+      ON tr.pm_task_tier_id = t.pm_task_tier_id
+    WHERE t.pm_template_id = $1
+      AND t.active = true
+    ORDER BY tr.tier_order, t.sequence_order
+  `, [templateId]);
+
+  return res.status(200).json({ tasks: tasks.rows });
+}
+
+    if (req.method === "POST" && action === "addTask") {
+  const {
+    pm_template_id,
+    pm_task_tier_id,
+    task_description,
+    discipline,
+    sequence_order
+  } = req.body;
+
+  await pool.query(`
+    INSERT INTO pm_task_templates (
+      pm_template_id,
+      pm_task_tier_id,
+      task_description,
+      discipline,
+      sequence_order,
+      active
+    )
+    VALUES ($1, $2, $3, $4, $5, true)
+  `, [
+    pm_template_id,
+    pm_task_tier_id,
+    task_description,
+    discipline,
+    sequence_order
+  ]);
+
+  return res.status(200).json({ success: true });
+}
+
+    
     
     
     /* ======================================================
