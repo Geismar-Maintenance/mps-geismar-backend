@@ -343,9 +343,67 @@ if (req.method === "POST" && action === "addTaskTier") {
   return res.status(200).json({ success: true });
 }
 
-    
-    
-    
+    if (req.method === "GET" && action === "getTaskRequirements") {
+  const taskId = Number(req.query.taskId);
+
+  const result = await pool.query(
+    `
+    SELECT
+      pm_task_requirement_id,
+      requirement_name,
+      sequence_order,
+      requires_reading
+    FROM pm_task_requirements
+    WHERE pm_task_template_id = $1
+    ORDER BY sequence_order
+    `,
+    [taskId]
+  );
+
+  return res.status(200).json({ requirements: result.rows });
+}
+    if (req.method === "POST" && action === "addTaskRequirement") {
+  const {
+    pm_task_template_id,
+    requirement_name,
+    sequence_order,
+    requires_reading
+  } = req.body;
+
+  await pool.query(
+    `
+    INSERT INTO pm_task_requirements (
+      pm_task_template_id,
+      requirement_name,
+      sequence_order,
+      requires_reading
+    )
+    VALUES ($1, $2, $3, $4)
+    `,
+    [
+      pm_task_template_id,
+      requirement_name,
+      sequence_order,
+      requires_reading
+    ]
+  );
+
+  return res.status(200).json({ success: true });
+}
+  if (req.method === "POST" && action === "removeTaskRequirement") {
+  const { pm_task_requirement_id } = req.body;
+
+  await pool.query(
+    `
+    DELETE FROM pm_task_requirements
+    WHERE pm_task_requirement_id = $1
+    `,
+    [pm_task_requirement_id]
+  );
+
+  return res.status(200).json({ success: true });
+}  
+        
     /* ======================================================
        POST /api/pm?action=run
        ====================================================== */
