@@ -238,23 +238,18 @@ if (req.method === "GET" && action === "status") {
 }   
 
     if (req.method === "GET" && action === "getTaskTiers") {
-  const templateId = Number(req.query.templateId);
-
-  const tiers = await pool.query(
-    `
+  const tiers = await pool.query(`
     SELECT
       pm_task_tier_id,
       tier_name,
       tier_order
     FROM pm_task_tiers
-    WHERE pm_template_id = $1
     ORDER BY tier_order
-    `,
-    [templateId]
-  );
+  `);
 
   return res.status(200).json({ tiers: tiers.rows });
 }
+
 if (req.method === "POST" && action === "addTaskTier") {
   const { pm_template_id, tier_name, tier_order } = req.body;
 
