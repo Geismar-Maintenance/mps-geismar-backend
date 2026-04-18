@@ -183,6 +183,59 @@ if (req.method === "GET" && action === "status") {
     });
   }
 }
+    if (req.method === "GET" && action === "getBlocks") {
+  const templateId = Number(req.query.templateId);
+
+  const blocks = await pool.query(`
+    SELECT
+      pm_block_id,
+      block_hours,
+      sequence_order
+    FROM pm_blocks
+    WHERE pm_template_id = $1
+    ORDER BY sequence_order
+  `, [templateId]);
+
+  return res.status(200).json({ blocks: blocks.rows });
+}
+
+    if (req.method === "POST" && action === "addBlock") {
+  const { pm_template_id, block_hours, sequence_order } = req.body;
+
+  await pool.query(
+    `
+    INSERT INTO pm_blocks
+      (pm_template_id, block_hours, sequence_order)
+    VALUES ($1, $2, $3)
+    `,
+    [pm_template_id, block_hours, sequence_order]
+  );
+
+  return res.status(200).json({ success: true });
+}
+
+ if (req.method === "POST" && action === "removeBlock") {
+  const { pm_block_id } = req.body;
+
+  const exists = await pool.query(`
+    SELECT 1 FROM pm_instances
+    WHERE pm_block_id = $1
+      AND status = 'active'
+  `, [pm_block_id]);
+
+  if (exists.rowCount > 0) {
+    return res.status(409).json({
+      error: "Cannot remove block with active PM instances"
+    });
+  }
+
+  await pool.query(
+    `DELETE FROM pm_blocks WHERE pm_block_id = $1`,
+    [pm_block_id]
+  );
+
+  return res.status(200).json({ success: true });
+}   
     
     /* ======================================================
        POST /api/pm?action=run
