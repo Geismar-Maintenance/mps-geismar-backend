@@ -236,6 +236,69 @@ if (req.method === "GET" && action === "status") {
 
   return res.status(200).json({ success: true });
 }   
+
+    if (req.method === "GET" && action === "getTaskTiers") {
+  const templateId = Number(req.query.templateId);
+
+  const tiers = await pool.query(
+    `
+    SELECT
+      pm_task_tier_id,
+      tier_name,
+      tier_order
+    FROM pm_task_tiers
+    WHERE pm_template_id = $1
+    ORDER BY tier_order
+    `,
+    [templateId]
+  );
+
+  return res.status(200).json({ tiers: tiers.rows });
+}
+if (req.method === "POST" && action === "addTaskTier") {
+  const { pm_template_id, tier_name, tier_order } = req.body;
+
+  await pool.query(
+    `
+    INSERT INTO pm_task_tiers (
+      pm_template_id,
+      tier_name,
+      tier_order
+    )
+    VALUES ($1, $2, $3)
+    `,
+    [pm_template_id, tier_name, tier_order]
+  );
+
+  return res.status(200).json({ success: true });
+}
+    if (req.method === "POST" && action === "removeTaskTier") {
+  const { pm_task_tier_id } = req.body;
+
+  const used = await pool.query(
+    `
+    SELECT 1
+    FROM pm_task_templates
+    WHERE pm_task_tier_id = $1
+    LIMIT 1
+    `,
+    [pm_task_tier_id]
+  );
+
+  if (used.rowCount > 0) {
+    return res.status(409).json({
+      error: "Task tier in use"
+    });
+  }
+
+  await pool.query(
+    `DELETE FROM pm_task_tiers WHERE pm_task_tier_id = $1`,
+    [pm_task_tier_id]
+  );
+
+  return res.status(200).json({ success: true });
+}
+    
     
     /* ======================================================
        POST /api/pm?action=run
