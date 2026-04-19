@@ -155,40 +155,41 @@ module.exports = async function handler(req, res) {
     }
   }
     
-    /* --------------------------
-       DASHBOARD INVENTORY SUMMARY
-       GET /api/parts?summary=inventory
-       -------------------------- */
-    if (summary === "inventory") {
-      try {
-        const result = await pool.query(`
-          SELECT
-            COUNT(*) FILTER (
-              WHERE total_qty = 0
-            ) AS out_stock,
-            COUNT(*) FILTER (
-              WHERE reorderlevel > 0 AND total_qty <= reorderlevel
-            ) AS low_stock
-          FROM (
-            SELECT
-              p.partid,
-              COALESCE(SUM(pl.qty), 0) AS total_qty,
-              p.reorderlevel AS reorderlevel
-            FROM masterparts p
-            LEFT JOIN partlocations pl ON p.partid = pl.partid
-            GROUP BY p.partid, p.reorderlevel
-          ) t;
-        `);
+  /* --------------------------
+   DASHBOARD INVENTORY SUMMARY
+   GET /api/parts?summary=inventory
+   -------------------------- */
+if (summary === "inventory") {
+  try {
+    const result = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (
+          WHERE total_qty = 0
+        ) AS out_stock,
+        COUNT(*) FILTER (
+          WHERE reorderlevel > 0 AND total_qty <= reorderlevel
+        ) AS low_stock
+      FROM (
+        SELECT
+          p.partid,
+          COALESCE(SUM(pl.qty), 0) AS total_qty,
+          p.reorderlevel
+        FROM masterparts p
+        LEFT JOIN partlocations pl ON p.partid = pl.partid
+        GROUP BY p.partid, p.reorderlevel
+      ) t;
+    `);
 
-        return res.status(200).json(result.rows[0]);
-      } } catch (err) {
-  console.error("INVENTORY SUMMARY ERROR:", err);
-  return res.status(500).json({
-    error: err.message,
-    stack: err.stack
-  });
+    return res.status(200).json(result.rows[0]);
+
+  } catch (err) {
+    console.error("INVENTORY SUMMARY ERROR:", err);
+    return res.status(500).json({
+      error: err.message,
+      stack: err.stack
+    });
+  }
 }
-
    /* --------------------------
    PART LIST / SEARCH
    GET /api/parts
