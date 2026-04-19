@@ -1,15 +1,13 @@
-// export const runtime = "nodejs";
+export const runtime = "nodejs";
 
-// import { Pool } from "pg";
-const { Pool } = require("pg");
+import { Pool } from "pg";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// export default async function handler(req, res) {
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   /* ==========================
      CORS
      ========================== */
@@ -22,7 +20,7 @@ module.exports = async function handler(req, res) {
   }
 
   /* ======================================================
-     ✅ ADMIN: CREATE MASTER PART (EXPLICIT GATE)
+     ADMIN: CREATE MASTER PART
      POST /api/parts?admin=true
      ====================================================== */
   if (req.method === "POST" && req.query.admin === "true") {
@@ -35,7 +33,6 @@ module.exports = async function handler(req, res) {
       reorderlevel
     } = req.body;
 
-    // ✅ Validation
     if (!partnumber || !description) {
       return res.status(400).json({
         error: "partnumber and description are required"
@@ -45,7 +42,6 @@ module.exports = async function handler(req, res) {
     const client = await pool.connect();
 
     try {
-      // ✅ Enforce unique part number
       const exists = await client.query(
         `SELECT partid FROM masterparts WHERE partnumber = $1`,
         [partnumber.trim()]
@@ -57,7 +53,6 @@ module.exports = async function handler(req, res) {
         });
       }
 
-      // ✅ Insert MASTER ONLY (no inventory, no locations)
       const result = await client.query(
         `
         INSERT INTO masterparts
@@ -68,8 +63,8 @@ module.exports = async function handler(req, res) {
         `,
         [
           partnumber.trim(),
-          manufacturer?.trim() || null,
-          model?.trim() || null,
+          manufacturer || null,
+          model || null,
           description.trim(),
           Number(cost) || 0,
           Number(reorderlevel) || 0
@@ -93,180 +88,161 @@ module.exports = async function handler(req, res) {
   }
 
   /* ======================================================
-     ❌ BLOCK ALL OTHER POSTs
+     BLOCK OTHER POSTs
      ====================================================== */
   if (req.method === "POST") {
     return res.status(405).json({
-      error: "POST not allowed without admin=true"
+      error: "POST not allowed"
     });
   }
 
   /* ======================================================
-     ✅ OPS: GET HANDLERS
+     GET HANDLERS
      ====================================================== */
   if (req.method === "GET") {
-    const summary = req.query.summary;
     const search = req.query.search?.trim() || "";
-/* --------------------------
-     PARTS TRANSACTION HISTORY
-     GET /api/parts?history=true
-     -------------------------- */
-  if (req.query.history === "true") {
-    try {
-      const result = await pool.query(`
-        SELECT
-          t.transactiondate,
-          tt.transactiontype,
-          p.partnumber,
-          p.description,
-          t.qty,
-          t.performed_by,
+    const summary = req.query.summary;
 
-          lf.cabinet AS from_cabinet,
-          lf.section AS from_section,
-          lf.bin AS from_bin,
+    /* --------------------------
+       PARTS TRANSACTION HISTORY
+       GET /api/parts?history=true
+       -------------------------- */
+    if (req.query.history === "true") {
+      try {
+        const result = await pool.query(`
+          SELECT
+            t.transactiondate,
+            tt.transactiontype,
+            p.partnumber,
+            p.description,
+            t.qty,
+            t.performed_by
+          FROM transactions t
+          JOIN transactiontypes tt
+            ON tt.transactiontypeid = t.transactiontypeid
+          JOIN masterparts p
+            ON p.partid = t.partid
+          ORDER BY t.transactiondate DESC
+          LIMIT 500
+        `);
 
-          lt.cabinet AS to_cabinet,
-          lt.section AS to_section,
-          lt.bin AS to_bin
+        return res.status(200).json(result.rows);
 
-        FROM transactions t
-        JOIN transactiontypes tt
-          ON tt.transactiontypeid = t.transactiontypeid
-        JOIN masterparts p
-          ON p.partid = t.partid
-
-        LEFT JOIN locations lf
-          ON lf.locationid = t.from_locationid
-        LEFT JOIN locations lt
-          ON lt.locationid = t.to_locationid
-
-        ORDER BY t.transactiondate DESC
-        LIMIT 500
-      `);
-
-      return res.status(200).json(result.rows);
-
-    } catch (err) {
-      console.error("ERROR loading parts history:", err);
-      return res.status(500).json({
-        error: "Failed to load parts history"
-      });
+      } catch (err) {
+        console.error("HISTORY ERROR:", err);
+        return res.status(500).json({
+          error: "Failed to load parts history"
+        });
+      }
     }
-  }
-    
-  /* --------------------------
-   DASHBOARD INVENTORY SUMMARY
-   GET /api/parts?summary=inventory
-   -------------------------- */
-if (summary === "inventory") {
-  try {
-    const result = await pool.query(`
-      SELECT
-        COUNT(*) FILTER (
-          WHERE total_qty = 0
-        ) AS out_stock,
-        COUNT(*) FILTER (
-          WHERE reorderlevel > 0 AND total_qty <= reorderlevel
-        ) AS low_stock
-      FROM (
+
+    /* --------------------------
+       INVENTORY SUMMARY
+       GET /api/parts?summary=inventory
+       -------------------------- */
+    if (summary === "inventory") {
+      try {
+        const result = await pool.query(`
+          SELECT
+            COUNT(*) FILTER (WHERE total_qty = 0) AS out_stock,
+            COUNT(*) FILTER (
+              WHERE reorderlevel > 0 AND total_qty <= reorderlevel
+            ) AS low_stock
+          FROM (
+            SELECT
+              p.partid,
+              p.reorderlevel,
+              COALESCE(SUM(pl.qty), 0) AS total_qty
+            FROM masterparts p
+            LEFT JOIN partlocations pl ON p.partid = pl.partid
+            GROUP BY p.partid, p.reorderlevel
+          ) t;
+        `);
+
+        return res.status(200).json(result.rows[0]);
+
+      } catch (err) {
+        console.error("SUMMARY ERROR:", err);
+        return res.status(500).json({
+          error: "Inventory summary failed"
+        });
+      }
+    }
+
+    /* --------------------------
+       PART SEARCH (ORIGINAL)
+       GET /api/parts?search=...
+       -------------------------- */
+    if (search.length < 2) {
+      return res.status(200).json([]);
+    }
+
+    const client = await pool.connect();
+
+    try {
+      const partsResult = await client.query(
+        `
         SELECT
           p.partid,
-          COALESCE(SUM(pl.qty), 0) AS total_qty,
-          p.reorderlevel
+          p.partnumber,
+          p.manufacturer,
+          p.model,
+          p.description,
+          p.cost,
+          p.reorderlevel,
+          COALESCE(SUM(pl.qty), 0)::INTEGER AS total_qty
         FROM masterparts p
-        LEFT JOIN partlocations pl ON p.partid = pl.partid
-        GROUP BY p.partid, p.reorderlevel
-      ) t;
-    `);
-
-    return res.status(200).json(result.rows[0]);
-
-  } catch (err) {
-    console.error("INVENTORY SUMMARY ERROR:", err);
-    return res.status(500).json({
-      error: err.message,
-      stack: err.stack
-    });
-  }
-}
-   /* --------------------------
-   PART LIST / SEARCH
-   GET /api/parts
-   GET /api/parts?search=...
-   -------------------------- */
-const client = await pool.connect();
-
-try {
-  const whereClause = search.length >= 2
-    ? `
+        LEFT JOIN partlocations pl ON pl.partid = p.partid
         WHERE
           p.partnumber ILIKE $1 OR
           p.model ILIKE $1 OR
           p.description ILIKE $1
-      `
-    : ``;
+        GROUP BY
+          p.partid,
+          p.partnumber,
+          p.manufacturer,
+          p.model,
+          p.description,
+          p.cost,
+          p.reorderlevel
+        ORDER BY p.partnumber
+        LIMIT 100
+        `,
+        [`%${search}%`]
+      );
 
-  const params = search.length >= 2
-    ? [`%${search}%`]
-    : [];
+      const locationsResult = await client.query(`
+        SELECT
+          pl.partid,
+          pl.locationid,
+          l.cabinet,
+          l.section,
+          l.bin,
+          pl.qty
+        FROM partlocations pl
+        JOIN locations l ON l.locationid = pl.locationid
+        WHERE pl.qty > 0
+      `);
 
-  const partsResult = await client.query(
-    `
-    SELECT
-      p.partid,
-      p.partnumber,
-      p.manufacturer,
-      p.model,
-      p.description,
-      p.cost,
-      p.reorderlevel,
-      COALESCE(SUM(pl.qty), 0)::INTEGER AS total_qty
-    FROM masterparts p
-    LEFT JOIN partlocations pl ON pl.partid = p.partid
-    ${whereClause}
-    GROUP BY p.partid
-    ORDER BY p.partnumber
-    LIMIT 200
-    `,
-    params
-  );
+      const parts = partsResult.rows.map(p => ({
+        ...p,
+        locations: locationsResult.rows.filter(
+          l => l.partid === p.partid
+        )
+      }));
 
-  const locationsResult = await client.query(
-    `
-    SELECT
-      pl.partid,
-      pl.locationid,
-      l.cabinet,
-      l.section,
-      l.bin,
-      pl.qty
-    FROM partlocations pl
-    JOIN locations l ON l.locationid = pl.locationid
-    WHERE pl.qty > 0
-    `
-  );
+      return res.status(200).json(parts);
 
-  const parts = partsResult.rows.map(p => ({
-    ...p,
-    locations: locationsResult.rows.filter(
-      l => l.partid === p.partid
-    )
-  }));
+    } catch (err) {
+      console.error("SEARCH ERROR:", err);
+      return res.status(500).json({
+        error: "Failed to fetch parts"
+      });
+    } finally {
+      client.release();
+    }
+  }
 
-  return res.status(200).json(parts);
-
-} catch (err) {
-  console.error("PART LOAD ERROR:", err);
-  return res.status(500).json({
-    error: "Failed to fetch parts"
-  });
-} finally {
-  client.release();
-}
-  /* ======================================================
-     FALLBACK
-     ====================================================== */
   return res.status(405).json({
     error: "Method not allowed"
   });
