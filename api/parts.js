@@ -187,77 +187,80 @@ export default async function handler(req, res) {
       }
     }
 
-    /* --------------------------
-       PART SEARCH
-       GET /api/parts?search=...
-       -------------------------- */
-    if (search.length < 2) {
-      return res.status(200).json([]);
-    }
+   /* --------------------------
+   PART LIST / SEARCH
+   GET /api/parts
+   GET /api/parts?search=...
+   -------------------------- */
+const client = await pool.connect();
 
-    const client = await pool.connect();
-
-    try {
-      // ✅ Part master + total quantity
-      const partsResult = await client.query(
-        `
-        SELECT
-          p.partid,
-          p.partnumber,
-          p.manufacturer,
-          p.model,
-          p.description,
-          p.cost,
-          p.reorderlevel,
-          COALESCE(SUM(pl.qty), 0)::INTEGER AS total_qty
-        FROM masterparts p
-        LEFT JOIN partlocations pl ON pl.partid = p.partid
+try {
+  const whereClause = search.length >= 2
+    ? `
         WHERE
           p.partnumber ILIKE $1 OR
           p.model ILIKE $1 OR
           p.description ILIKE $1
-        GROUP BY p.partid
-        ORDER BY p.partnumber
-        LIMIT 100
-        `,
-        [`%${search}%`]
-      );
+      `
+    : ``;
 
-      // ✅ Locations with inventory only
-      const locationsResult = await client.query(
-        `
-        SELECT
-          pl.partid,
-          pl.locationid,
-          l.cabinet,
-          l.section,
-          l.bin,
-          pl.qty
-        FROM partlocations pl
-        JOIN locations l ON l.locationid = pl.locationid
-        WHERE pl.qty > 0
-        `
-      );
+  const params = search.length >= 2
+    ? [`%${search}%`]
+    : [];
 
-      const parts = partsResult.rows.map(p => ({
-        ...p,
-        locations: locationsResult.rows.filter(
-          l => l.partid === p.partid
-        )
-      }));
+  const partsResult = await client.query(
+    `
+    SELECT
+      p.partid,
+      p.partnumber,
+      p.manufacturer,
+      p.model,
+      p.description,
+      p.cost,
+      p.reorderlevel,
+      COALESCE(SUM(pl.qty), 0)::INTEGER AS total_qty
+    FROM masterparts p
+    LEFT JOIN partlocations pl ON pl.partid = p.partid
+    ${whereClause}
+    GROUP BY p.partid
+    ORDER BY p.partnumber
+    LIMIT 200
+    `,
+    params
+  );
 
-      return res.status(200).json(parts);
+  const locationsResult = await client.query(
+    `
+    SELECT
+      pl.partid,
+      pl.locationid,
+      l.cabinet,
+      l.section,
+      l.bin,
+      pl.qty
+    FROM partlocations pl
+    JOIN locations l ON l.locationid = pl.locationid
+    WHERE pl.qty > 0
+    `
+  );
 
-    } catch (err) {
-      console.error("PART SEARCH ERROR:", err);
-      return res.status(500).json({
-        error: "Failed to fetch parts"
-      });
-    } finally {
-      client.release();
-    }
-  }
+  const parts = partsResult.rows.map(p => ({
+    ...p,
+    locations: locationsResult.rows.filter(
+      l => l.partid === p.partid
+    )
+  }));
 
+  return res.status(200).json(parts);
+
+} catch (err) {
+  console.error("PART LOAD ERROR:", err);
+  return res.status(500).json({
+    error: "Failed to fetch parts"
+  });
+} finally {
+  client.release();
+}
   /* ======================================================
      FALLBACK
      ====================================================== */
