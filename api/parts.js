@@ -1,13 +1,15 @@
 export const runtime = "nodejs";
 
-import { Pool } from "pg";
+// import { Pool } from "pg";
+const { Pool } = require("pg");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-export default async function handler(req, res) {
+// export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   /* ==========================
      CORS
      ========================== */
