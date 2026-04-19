@@ -171,10 +171,10 @@ export default async function handler(req, res) {
             SELECT
               p.partid,
               COALESCE(SUM(pl.qty), 0) AS total_qty,
-              p.reorderlevel
+              p.reorderlevel AS reorderlevel
             FROM masterparts p
             LEFT JOIN partlocations pl ON p.partid = pl.partid
-            GROUP BY p.partid
+            GROUP BY p.partid, p.reorderlevel
           ) t;
         `);
 
