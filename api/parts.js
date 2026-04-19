@@ -179,13 +179,13 @@ export default async function handler(req, res) {
         `);
 
         return res.status(200).json(result.rows[0]);
-      } catch (err) {
-        console.error("INVENTORY SUMMARY ERROR:", err);
-        return res.status(500).json({
-          error: "Inventory summary failed"
-        });
-      }
-    }
+      } } catch (err) {
+  console.error("INVENTORY SUMMARY ERROR:", err);
+  return res.status(500).json({
+    error: err.message,
+    stack: err.stack
+  });
+}
 
    /* --------------------------
    PART LIST / SEARCH
