@@ -103,6 +103,11 @@ export default async function handler(req, res) {
     const search = req.query.search?.trim() || "";
     const summary = req.query.summary;
 
+    if (req.method === "GET" && req.query.partId) {
+  // return part details
+}
+
+
     /* --------------------------
        PARTS TRANSACTION HISTORY
        GET /api/parts?history=true
