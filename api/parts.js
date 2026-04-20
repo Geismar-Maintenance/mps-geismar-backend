@@ -103,8 +103,62 @@ export default async function handler(req, res) {
     const search = req.query.search?.trim() || "";
     const summary = req.query.summary;
 
-    if (req.method === "GET" && req.query.partId) {
-  // return part details
+    // GET single part details
+if (req.method === "GET" && req.query.partId) {
+  const partId = Number(req.query.partId);
+
+  // 1️⃣ Part header
+  const partRes = await pool.query(`
+    SELECT
+      partid,
+      partnumber,
+      description,
+      manufacturer,
+      model,
+      reorderlevel
+    FROM masterparts
+    WHERE partid = $1
+  `, [partId]);
+
+  if (partRes.rowCount === 0) {
+    return res.status(404).json({ error: "Part not found" });
+  }
+
+  // 2️⃣ Locations
+  const locRes = await pool.query(`
+    SELECT
+      l.cabinet,
+      l.section,
+      l.bin,
+      pl.qty
+    FROM partlocations pl
+    JOIN locations l
+      ON l.locationid = pl.locationid
+    WHERE pl.partid = $1
+      AND pl.qty > 0
+    ORDER BY l.cabinet, l.section, l.bin
+  `, [partId]);
+
+  // 3️⃣ History
+  const histRes = await pool.query(`
+    SELECT
+      t.transactiondate,
+      tt.transactiontype,
+      t.qty,
+      t.performed_by
+    FROM transactions t
+    JOIN transactiontypes tt
+      ON tt.transactiontypeid = t.transactiontypeid
+    WHERE t.partid = $1
+    ORDER BY t.transactiondate DESC
+    LIMIT 50
+  `, [partId]);
+
+  return res.status(200).json({
+    part: partRes.rows[0],
+    locations: locRes.rows,
+    history: histRes.rows
+  });
 }
 
 
