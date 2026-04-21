@@ -229,50 +229,51 @@ FROM (
       }
     }
 
-        /* --------------------------
+/* --------------------------
    INVENTORY FILTERED LISTS
    GET /api/parts?inventory=low|out
    -------------------------- */
 if (req.query.inventory) {
   const type = req.query.inventory;
 
-  let havingClause = "";
-  if (type === "out") {
-    havingClause = "COALESCE(SUM(pl.qty), 0) = 0";
-  } else if (type === "low") {
-    havingClause = `
-      COALESCE(SUM(pl.qty), 0) > 0
-      AND p.reorderlevel > 0
-      AND COALESCE(SUM(pl.qty), 0) < p.reorderlevel
-    `;
-  } else {
-    return res.status(200).json([]);
-  }
-
   try {
-    const result = await pool.query(`
-      SELECT
-        p.partid,
-        p.partnumber,
-        p.manufacturer,
-        p.model,
-        p.description,
-        p.cost,
-        p.reorderlevel,
-        COALESCE(SUM(pl.qty), 0)::INTEGER AS total_qty
-      FROM masterparts p
-      LEFT JOIN partlocations pl ON p.partid = pl.partid
-      GROUP BY
-        p.partid,
-        p.partnumber,
-        p.manufacturer,
-        p.model,
-        p.description,
-        p.cost,
-        p.reorderlevel
-      HAVING ${havingClause}
-      ORDER BY p.partnumber
-    `);
+    const result = await pool.query(
+      `
+      WITH inventory AS (
+        SELECT
+          p.partid,
+          p.partnumber,
+          p.manufacturer,
+          p.model,
+          p.description,
+          p.cost,
+          p.reorderlevel,
+          COALESCE(SUM(pl.qty), 0)::INTEGER AS total_qty
+        FROM masterparts p
+        LEFT JOIN partlocations pl ON p.partid = pl.partid
+        GROUP BY
+          p.partid,
+          p.partnumber,
+          p.manufacturer,
+          p.model,
+          p.description,
+          p.cost,
+          p.reorderlevel
+      )
+      SELECT *
+      FROM inventory
+      WHERE
+        CASE
+          WHEN $1 = 'out' THEN total_qty = 0
+          WHEN $1 = 'low' THEN
+            reorderlevel > 0
+            AND total_qty > 0
+            AND total_qty <= reorderlevel
+        END
+      ORDER BY partnumber
+      `,
+      [type]   // ✅ THIS WAS MISSING
+    );
 
     return res.status(200).json(result.rows);
 
