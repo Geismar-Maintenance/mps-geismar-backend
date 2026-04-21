@@ -201,20 +201,22 @@ if (req.method === "GET" && req.query.partId) {
     if (summary === "inventory") {
       try {
         const result = await pool.query(`
-          SELECT
-            COUNT(*) FILTER (WHERE total_qty = 0) AS out_stock,
-            COUNT(*) FILTER (
-              WHERE reorderlevel > 0 AND total_qty <= reorderlevel
-            ) AS low_stock
-          FROM (
-            SELECT
-              p.partid,
-              p.reorderlevel,
-              COALESCE(SUM(pl.qty), 0) AS total_qty
-            FROM masterparts p
-            LEFT JOIN partlocations pl ON p.partid = pl.partid
-            GROUP BY p.partid, p.reorderlevel
-          ) t;
+         SELECT
+  COUNT(*) FILTER (WHERE total_qty = 0) AS out_stock,
+  COUNT(*) FILTER (
+    WHERE reorderlevel > 0
+      AND total_qty > 0
+      AND total_qty <= reorderlevel
+  ) AS low_stock
+FROM (
+  SELECT
+    p.partid,
+    p.reorderlevel,
+    COALESCE(SUM(pl.qty), 0) AS total_qty
+  FROM masterparts p
+  LEFT JOIN partlocations pl ON p.partid = pl.partid
+  GROUP BY p.partid, p.reorderlevel
+) t;
         `);
 
         return res.status(200).json(result.rows[0]);
