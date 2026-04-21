@@ -79,14 +79,7 @@ if (req.query.history === "true") {
 
       /* ---------- CREATE WORK ORDER ---------- */
       if (!action || action === "create") {
-        const {
-  assetid,
-  description,
-  wotype,
-  priority,
-  duedate,
-  created_by_userid
-} = req.body;
+        const {assetid,description,wotype,priority,duedate,created_by_userid} = req.body;
 
 
         if (!assetid || !description || !wotype || !priority) {
@@ -96,27 +89,30 @@ if (req.query.history === "true") {
         }
 
         const result = await pool.query(
-          `
-          INSERT INTO workorders
-  (assetid, description, wotype, priority, status, duedate, created_by_userid)
-VALUES($1, $2, $3, $4, 1, $5, $6)
+  `
+  INSERT INTO workorders
+    (assetid, description, wotype, priority, status, duedate, created_by_userid)
+  VALUES
+    ($1, $2, $3, $4, 1, $5, $6)
+  RETURNING woid
+  `,
+  [
+    assetid,
+    description,
+    wotype,
+    priority,
+    duedate || null,
+    created_by_userid || null
+  ]
+);
 
-          RETURNING woid
-          `,
-          [assetid, description, wotype, priority, duedate || null]
-        );
 
         return res.status(201).json(result.rows[0]);
       }
 
       /* ---------- CLOSE WORK ORDER ---------- */
 if (action === "close") {
-  const {
-  woid,
-  workperformed,
-  workedBy,
-  completed_by_userid
-} = req.body;
+  const {woid,workperformed,workedBy,completed_by_userid} = req.body;
 
   if (!woid || !workperformed || !workedBy) {
     return res.status(400).json({
@@ -150,12 +146,7 @@ await pool.query(
     closeddate = CURRENT_DATE
   WHERE woid = $4
   `,
-  [
-    workperformed.trim(),
-    workedBy,
-    completed_by_userid,
-    woid
-  ]
+  [workperformed.trim(),workedBy,completed_by_userid,woid]
 );
 
   return res.status(200).json({ success: true });
