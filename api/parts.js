@@ -162,62 +162,6 @@ if (req.method === "GET" && req.query.partId) {
 }
 
     /* --------------------------
-   INVENTORY FILTERED LISTS
-   GET /api/parts?inventory=low|out
-   -------------------------- */
-if (req.query.inventory) {
-  const type = req.query.inventory;
-
-  let havingClause = "";
-  if (type === "out") {
-    havingClause = "COALESCE(SUM(pl.qty), 0) = 0";
-  } else if (type === "low") {
-    havingClause = `
-      COALESCE(SUM(pl.qty), 0) > 0
-      AND p.reorderlevel > 0
-      AND COALESCE(SUM(pl.qty), 0) < p.reorderlevel
-    `;
-  } else {
-    return res.status(200).json([]);
-  }
-
-  try {
-    const result = await pool.query(`
-      SELECT
-        p.partid,
-        p.partnumber,
-        p.manufacturer,
-        p.model,
-        p.description,
-        p.cost,
-        p.reorderlevel,
-        COALESCE(SUM(pl.qty), 0)::INTEGER AS total_qty
-      FROM masterparts p
-      LEFT JOIN partlocations pl ON p.partid = pl.partid
-      GROUP BY
-        p.partid,
-        p.partnumber,
-        p.manufacturer,
-        p.model,
-        p.description,
-        p.cost,
-        p.reorderlevel
-      HAVING ${havingClause}
-      ORDER BY p.partnumber
-    `);
-
-    return res.status(200).json(result.rows);
-
-  } catch (err) {
-    console.error("INVENTORY FILTER ERROR:", err);
-    return res.status(500).json({
-      error: "Failed to load inventory filter"
-    });
-  }
-}
-
-
-    /* --------------------------
        PARTS TRANSACTION HISTORY
        GET /api/parts?history=true
        -------------------------- */
@@ -282,6 +226,61 @@ if (req.query.inventory) {
         });
       }
     }
+
+        /* --------------------------
+   INVENTORY FILTERED LISTS
+   GET /api/parts?inventory=low|out
+   -------------------------- */
+if (req.query.inventory) {
+  const type = req.query.inventory;
+
+  let havingClause = "";
+  if (type === "out") {
+    havingClause = "COALESCE(SUM(pl.qty), 0) = 0";
+  } else if (type === "low") {
+    havingClause = `
+      COALESCE(SUM(pl.qty), 0) > 0
+      AND p.reorderlevel > 0
+      AND COALESCE(SUM(pl.qty), 0) < p.reorderlevel
+    `;
+  } else {
+    return res.status(200).json([]);
+  }
+
+  try {
+    const result = await pool.query(`
+      SELECT
+        p.partid,
+        p.partnumber,
+        p.manufacturer,
+        p.model,
+        p.description,
+        p.cost,
+        p.reorderlevel,
+        COALESCE(SUM(pl.qty), 0)::INTEGER AS total_qty
+      FROM masterparts p
+      LEFT JOIN partlocations pl ON p.partid = pl.partid
+      GROUP BY
+        p.partid,
+        p.partnumber,
+        p.manufacturer,
+        p.model,
+        p.description,
+        p.cost,
+        p.reorderlevel
+      HAVING ${havingClause}
+      ORDER BY p.partnumber
+    `);
+
+    return res.status(200).json(result.rows);
+
+  } catch (err) {
+    console.error("INVENTORY FILTER ERROR:", err);
+    return res.status(500).json({
+      error: "Failed to load inventory filter"
+    });
+  }
+}
 
     /* --------------------------
        PART SEARCH (ORIGINAL)
