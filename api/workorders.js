@@ -79,7 +79,15 @@ if (req.query.history === "true") {
 
       /* ---------- CREATE WORK ORDER ---------- */
       if (!action || action === "create") {
-        const { assetid, description, wotype, priority, duedate } = req.body;
+        const {
+  assetid,
+  description,
+  wotype,
+  priority,
+  duedate,
+  created_by_userid
+} = req.body;
+
 
         if (!assetid || !description || !wotype || !priority) {
           return res.status(400).json({
@@ -90,9 +98,9 @@ if (req.query.history === "true") {
         const result = await pool.query(
           `
           INSERT INTO workorders
-            (assetid, description, wotype, priority, status, duedate)
-          VALUES
-            ($1, $2, $3, $4, 1, $5)
+  (assetid, description, wotype, priority, status, duedate, created_by_userid)
+VALUES($1, $2, $3, $4, 1, $5, $6)
+
           RETURNING woid
           `,
           [assetid, description, wotype, priority, duedate || null]
@@ -103,7 +111,12 @@ if (req.query.history === "true") {
 
       /* ---------- CLOSE WORK ORDER ---------- */
 if (action === "close") {
-  const { woid, workperformed, workedBy } = req.body;
+  const {
+  woid,
+  workperformed,
+  workedBy,
+  completed_by_userid
+} = req.body;
 
   if (!woid || !workperformed || !workedBy) {
     return res.status(400).json({
@@ -126,22 +139,24 @@ if (action === "close") {
     });
   }
 
-  await pool.query(
-    `
-    UPDATE workorders
-    SET
-      workperformed = $1,
-      workperformed_by = $2,
-      status = 2,
-      closeddate = CURRENT_DATE
-    WHERE woid = $3
-    `,
-    [
-      workperformed.trim(), // $1
-      workedBy,              // $2
-      woid                   // $3
-    ]
-  );
+await pool.query(
+  `
+  UPDATE workorders
+  SET
+    workperformed = $1,
+    workperformed_by = $2,
+    completed_by_userid = $3,
+    status = 2,
+    closeddate = CURRENT_DATE
+  WHERE woid = $4
+  `,
+  [
+    workperformed.trim(),
+    workedBy,
+    completed_by_userid,
+    woid
+  ]
+);
 
   return res.status(200).json({ success: true });
 }
