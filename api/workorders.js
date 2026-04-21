@@ -27,25 +27,21 @@ export default async function handler(req, res) {
 if (req.query.history === "true") {
   const result = await pool.query(`
     SELECT
-      w.woid,
-      COALESCE(a.assetname, w.assetname) AS assetname,
-      w.description,
-      wt.type AS type,
-      p.priority AS priority,
-      s.status AS status,
-      w.opendate,
-      w.closeddate,
-      w.workperformed
-    FROM workorders w
-    INNER JOIN wostatus s ON s.id = w.status
-    LEFT JOIN assets a ON a.assetid = w.assetid
-    LEFT JOIN wotypes wt ON wt.id = w.wotype
-    LEFT JOIN wopriorities p ON p.id = w.priority
-    LEFT JOIN technicians t ON t.id = w.workperformed_by
-    WHERE w.status IN (2, 3)
-    ORDER BY w.closeddate DESC
-    LIMIT 500
-  `);
+  w.woid,
+  COALESCE(a.assetname, w.assetname) AS assetname,
+  w.description,
+  wt.type AS type,
+  p.priority AS priority,
+  w.opendate,
+  w.closeddate
+FROM workorders w
+LEFT JOIN assets a ON a.assetid = w.assetid
+LEFT JOIN wotypes wt ON wt.id = w.wotype
+LEFT JOIN wopriorities p ON p.id = w.priority
+WHERE w.status IN (2, 3)
+ORDER BY w.closeddate DESC
+LIMIT 500;
+ `);
 
   return res.status(200).json(result.rows);
 }
