@@ -207,17 +207,18 @@ if (req.method === "GET" && req.query.partId) {
   // 2️⃣ Locations
   const locRes = await pool.query(`
     SELECT
-      l.cabinet,
-      l.section,
-      l.bin,
-      pl.qty
-    FROM partlocations pl
-    JOIN locations l
-      ON l.locationid = pl.locationid
-    WHERE pl.partid = $1
-      AND pl.qty > 0
-    ORDER BY l.cabinet, l.section, l.bin
-  `, [partId]);
+  pl.locationid,
+  l.cabinet,
+  l.section,
+  l.bin,
+  pl.qty
+FROM partlocations pl
+JOIN locations l
+  ON l.locationid = pl.locationid
+WHERE pl.partid = $1
+  AND pl.qty > 0
+ORDER BY l.cabinet, l.section, l.bin
+
 
   // 3️⃣ History
   const histRes = await pool.query(`
