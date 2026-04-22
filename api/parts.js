@@ -94,9 +94,7 @@ export default async function handler(req, res) {
       error: "POST not allowed"
     });
   }
-}
 
-try{
   /* ======================================================
      GET HANDLERS
      ====================================================== */
@@ -126,18 +124,23 @@ if (req.method === "GET" && req.query.partId) {
   }
 
   // 2️⃣ Locations
-  const locRes = await pool.query(`
-    SELECT
-  l.cabinet,
-  l.section,
-  l.bin,
-  pl.qty
-FROM partlocations pl
-JOIN locations l
-  ON l.locationid = pl.locationid
-WHERE pl.partid = $1
-  AND pl.qty > 0
-ORDER BY l.cabinet, l.section, l.bin`)
+ const locRes = await pool.query(
+  `
+  SELECT
+    l.cabinet,
+    l.section,
+    l.bin,
+    pl.qty
+  FROM partlocations pl
+  JOIN locations l
+    ON l.locationid = pl.locationid
+  WHERE pl.partid = $1
+    AND pl.qty > 0
+  ORDER BY l.cabinet, l.section, l.bin
+  `,
+  [partId]
+);
+
 
 
   // 3️⃣ History
