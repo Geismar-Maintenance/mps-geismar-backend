@@ -86,6 +86,85 @@ export default async function handler(req, res) {
       client.release();
     }
   }
+   /* --------------------------
+       CYCLE COUNT  
+       GET /api/parts?cycleCount=...
+       -------------------------- */
+if (req.method === "POST" && req.query.action === "cycleCount") {
+  const { partid, locationid, actual_qty, performed_by_userid } = req.body;
+
+  if (
+    partid == null ||
+    locationid == null ||
+    actual_qty == null ||
+    actual_qty < 0
+  ) {
+    return res.status(400).json({ error: "Invalid cycle count data" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Load current qty and validate part/location match
+    const locRes = await client.query(
+      `
+      SELECT qty
+      FROM partlocations
+      WHERE partid = $1 AND locationid = $2
+      `,
+      [partid, locationid]
+    );
+
+    if (locRes.rowCount === 0) {
+      throw new Error("Part does not exist at this location");
+    }
+
+    const system_qty = Number(locRes.rows[0].qty);
+    const delta = actual_qty - system_qty;
+
+    // 2. Prevent negative final qty
+    if (actual_qty < 0) {
+      throw new Error("Final quantity cannot be negative");
+    }
+
+    // 3. Insert transaction (delta)
+    await client.query(
+      `
+      INSERT INTO transactions
+        (partid, locationid, transactiontypeid, qty, performed_by_userid)
+      VALUES (
+        $1,
+        $2,
+        (SELECT transactiontypeid FROM transactiontypes WHERE transactiontype = 'CYCLE_COUNT'),
+        $3,
+        $4
+      )
+      `,
+      [partid, locationid, delta, performed_by_userid]
+    );
+
+    // 4. Set qty to actual count
+    await client.query(
+      `
+      UPDATE partlocations
+      SET qty = $1
+      WHERE partid = $2 AND locationid = $3
+      `,
+      [actual_qty, partid, locationid]
+    );
+
+    await client.query("COMMIT");
+    return res.status(200).json({ success: true, delta });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Cycle count error:", err);
+    return res.status(400).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+
 
   /* ======================================================
      BLOCK OTHER POSTs
@@ -363,83 +442,5 @@ if (req.query.inventory) {
     error: "Method not allowed"
   });
 }
-
-    /* --------------------------
-       CYCLE COUNT  
-       GET /api/parts?cycleCount=...
-       -------------------------- */
-if (req.method === "POST" && req.query.action === "cycleCount") {
-  const { partid, locationid, actual_qty, performed_by_userid } = req.body;
-
-  if (
-    partid == null ||
-    locationid == null ||
-    actual_qty == null ||
-    actual_qty < 0
-  ) {
-    return res.status(400).json({ error: "Invalid cycle count data" });
-  }
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    // 1. Load current qty and validate part/location match
-    const locRes = await client.query(
-      `
-      SELECT qty
-      FROM partlocations
-      WHERE partid = $1 AND locationid = $2
-      `,
-      [partid, locationid]
-    );
-
-    if (locRes.rowCount === 0) {
-      throw new Error("Part does not exist at this location");
-    }
-
-    const system_qty = Number(locRes.rows[0].qty);
-    const delta = actual_qty - system_qty;
-
-    // 2. Prevent negative final qty
-    if (actual_qty < 0) {
-      throw new Error("Final quantity cannot be negative");
-    }
-
-    // 3. Insert transaction (delta)
-    await client.query(
-      `
-      INSERT INTO transactions
-        (partid, locationid, transactiontypeid, qty, performed_by_userid)
-      VALUES (
-        $1,
-        $2,
-        (SELECT transactiontypeid FROM transactiontypes WHERE transactiontype = 'CYCLE_COUNT'),
-        $3,
-        $4
-      )
-      `,
-      [partid, locationid, delta, performed_by_userid]
-    );
-
-    // 4. Set qty to actual count
-    await client.query(
-      `
-      UPDATE partlocations
-      SET qty = $1
-      WHERE partid = $2 AND locationid = $3
-      `,
-      [actual_qty, partid, locationid]
-    );
-
-    await client.query("COMMIT");
-    return res.status(200).json({ success: true, delta });
-
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error("Cycle count error:", err);
-    return res.status(400).json({ error: err.message });
-  } finally {
-    client.release();
-  }
 }
+   
