@@ -174,6 +174,7 @@ if (req.method === "POST" && req.query.action === "cycleCount") {
       error: "POST not allowed"
     });
   }
+}
 
   /* ======================================================
      GET HANDLERS
@@ -442,5 +443,5 @@ if (req.query.inventory) {
     error: "Method not allowed"
   });
 }
-}
+
    
