@@ -29,16 +29,24 @@ if (req.method === "GET" && req.query.id) {
       w.description,
       w.assetid,
       w.priority,
-      w.type,
-      w.status,
+      w.type AS type,
+      w.status AS stsus,
       w.duedate
     FROM workorders w
+    LEFT JOIN wostatus s ON s.id = w.status
     WHERE w.woid = $1
     `,
     [woid]
   );
 
   if (result.rowCount === 0) {
+    return res.status(404).json({ error: "Work order not found" });
+  }
+
+  return res.status(200).json(result.rows[0]);
+}
+
+      if (result.rowCount === 0) {
     return res.status(404).json({ error: "Work order not found" });
   }
 
@@ -92,13 +100,6 @@ LIMIT 500;
 
       return res.status(200).json(result.rows);
     }
-
-  if (result.rowCount === 0) {
-    return res.status(404).json({ error: "Work order not found" });
-  }
-
-  return res.status(200).json(result.rows[0]);
-}
 
     /* ======================================================
        POST – CREATE OR CLOSE WORK ORDER
