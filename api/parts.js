@@ -86,7 +86,7 @@ export default async function handler(req, res) {
       client.release();
     }
   }
-  if (req.method === "POST" && req.query.action === "importInventory") {
+if (req.method === "POST" && req.query.action === "importInventory") {
   const { rows } = req.body || {};
 
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -161,16 +161,14 @@ export default async function handler(req, res) {
       }
 
       // --- INVENTORY ---
-     
-const plRes = await client.query(
-  `
-  SELECT 1
-  FROM partlocations
-  WHERE partid = $1 AND locationid = $2
-  `,
-  [partid, locationid]
-);
-
+      const plRes = await client.query(
+        `
+        SELECT 1
+        FROM partlocations
+        WHERE partid = $1 AND locationid = $2
+        `,
+        [partid, locationid]
+      );
 
       if (plRes.rowCount === 0) {
         await client.query(
@@ -184,8 +182,8 @@ const plRes = await client.query(
         await client.query(
           `
           UPDATE partlocations
-          SET qty=$1
-          WHERE partid=$2 AND locationid=$3
+          SET qty = $1
+          WHERE partid = $2 AND locationid = $3
           `,
           [Number(r.qty), partid, locationid]
         );
@@ -203,18 +201,18 @@ const plRes = await client.query(
       inventory_records_written: inventoryWritten
     });
 
- catch (err) {
-  await client.query("ROLLBACK");
+  } catch (err) {
+    await client.query("ROLLBACK");
 
-  console.error("IMPORT ERROR MESSAGE:", err.message);
-  console.error("IMPORT ERROR STACK:", err.stack);
+    console.error("IMPORT ERROR MESSAGE:", err.message);
+    console.error("IMPORT ERROR STACK:", err.stack);
 
-  return res.status(500).json({
-    error: "Import failed",
-    detail: err.message
-  });
-}
- finally {
+    return res.status(500).json({
+      error: "Import failed",
+      detail: err.message
+    });
+
+  } finally {
     client.release();
   }
 }
