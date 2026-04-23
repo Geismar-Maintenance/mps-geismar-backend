@@ -10,7 +10,7 @@ export default async function handler(req, res) {
      CORS
      ========================== */
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
@@ -18,6 +18,32 @@ export default async function handler(req, res) {
   }
 
   try {
+        // GET /api/workorders/:id
+if (req.method === "GET" && req.query.id) {
+  const woid = Number(req.query.id);
+
+  const result = await pool.query(
+    `
+    SELECT
+      w.woid,
+      w.description,
+      w.assetid,
+      w.priority,
+      w.type,
+      w.status,
+      w.duedate
+    FROM workorders w
+    WHERE w.woid = $1
+    `,
+    [woid]
+  );
+
+  if (result.rowCount === 0) {
+    return res.status(404).json({ error: "Work order not found" });
+  }
+
+  return res.status(200).json(result.rows[0]);
+}
     /* ======================================================
        GET – WORK ORDERS
        ====================================================== */
@@ -66,26 +92,6 @@ LIMIT 500;
 
       return res.status(200).json(result.rows);
     }
-
-    // GET /api/workorders/:id
-if (req.method === "GET" && req.query.id) {
-  const woid = Number(req.query.id);
-
-  const result = await pool.query(
-    `
-    SELECT
-      w.woid,
-      w.description,
-      w.assetid,
-      w.priority,
-      w.type,
-      w.status,
-      w.duedate
-    FROM workorders w
-    WHERE w.woid = $1
-    `,
-    [woid]
-  );
 
   if (result.rowCount === 0) {
     return res.status(404).json({ error: "Work order not found" });
