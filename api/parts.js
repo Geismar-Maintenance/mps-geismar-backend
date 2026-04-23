@@ -161,14 +161,16 @@ export default async function handler(req, res) {
       }
 
       // --- INVENTORY ---
-      const plRes = await client.query(
-        `
-        SELECT partlocationid
-        FROM partlocations
-        WHERE partid=$1 AND locationid=$2
-        `,
-        [partid, locationid]
-      );
+     
+const plRes = await client.query(
+  `
+  SELECT 1
+  FROM partlocations
+  WHERE partid = $1 AND locationid = $2
+  `,
+  [partid, locationid]
+);
+
 
       if (plRes.rowCount === 0) {
         await client.query(
