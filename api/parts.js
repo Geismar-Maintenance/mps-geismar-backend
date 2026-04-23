@@ -76,8 +76,9 @@ export default async function handler(req, res) {
           manufacturer || null,
           model || null,
           description.trim(),
-          Number(cost) || 0,
-          Number(reorderlevel) || 0
+        safeInt(cost, 0),
+        safeInt(reorderlevel, 0)
+
         ]
       );
 
@@ -134,8 +135,9 @@ if (req.method === "POST" && req.query.action === "importInventory") {
             r.description,
             r.manufacturer || null,
             r.model || null,
-            Number(r.reorderlevel) || 0,
-            Number(r.cost) || 0
+          safeInt(cost, 0),
+          safeInt(reorderlevel, 0)
+
           ]
         );
         partid = ins.rows[0].partid;
