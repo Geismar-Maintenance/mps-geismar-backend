@@ -19,9 +19,14 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
   
-  function safeInt(value, defaultValue = 0) {
+  function safeInt(value, fallback = 0) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "string" && value.trim().toUpperCase() === "NAN") {
+    return fallback;
+  }
+
   const n = Number(value);
-  return Number.isFinite(n) ? n : defaultValue;
+  return Number.isFinite(n) ? n : fallback;
 }
 
   /* ======================================================
