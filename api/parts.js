@@ -86,6 +86,130 @@ export default async function handler(req, res) {
       client.release();
     }
   }
+  if (req.method === "POST" && req.query.action === "importInventory") {
+  const { rows } = req.body || {};
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return res.status(400).json({ error: "No rows supplied" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    let partsCreated = 0;
+    let locationsCreated = 0;
+    let inventoryWritten = 0;
+
+    for (const r of rows) {
+      // --- PART ---
+      const partRes = await client.query(
+        "SELECT partid FROM masterparts WHERE partnumber = $1",
+        [r.partnumber]
+      );
+
+      let partid;
+      if (partRes.rowCount === 0) {
+        const ins = await client.query(
+          `
+          INSERT INTO masterparts
+            (partnumber, description, manufacturer, model, reorderlevel, cost)
+          VALUES
+            ($1,$2,$3,$4,$5,$6)
+          RETURNING partid
+          `,
+          [
+            r.partnumber,
+            r.description,
+            r.manufacturer || null,
+            r.model || null,
+            Number(r.reorderlevel) || 0,
+            Number(r.cost) || 0
+          ]
+        );
+        partid = ins.rows[0].partid;
+        partsCreated++;
+      } else {
+        partid = partRes.rows[0].partid;
+      }
+
+      // --- LOCATION ---
+      const locRes = await client.query(
+        `
+        SELECT locationid
+        FROM locations
+        WHERE cabinet=$1 AND section=$2 AND bin=$3
+        `,
+        [r.cabinet, r.section, r.bin]
+      );
+
+      let locationid;
+      if (locRes.rowCount === 0) {
+        const insLoc = await client.query(
+          `
+          INSERT INTO locations (cabinet, section, bin)
+          VALUES ($1,$2,$3)
+          RETURNING locationid
+          `,
+          [r.cabinet, r.section, r.bin]
+        );
+        locationid = insLoc.rows[0].locationid;
+        locationsCreated++;
+      } else {
+        locationid = locRes.rows[0].locationid;
+      }
+
+      // --- INVENTORY ---
+      const plRes = await client.query(
+        `
+        SELECT partlocationid
+        FROM partlocations
+        WHERE partid=$1 AND locationid=$2
+        `,
+        [partid, locationid]
+      );
+
+      if (plRes.rowCount === 0) {
+        await client.query(
+          `
+          INSERT INTO partlocations (partid, locationid, qty)
+          VALUES ($1,$2,$3)
+          `,
+          [partid, locationid, Number(r.qty)]
+        );
+      } else {
+        await client.query(
+          `
+          UPDATE partlocations
+          SET qty=$1
+          WHERE partid=$2 AND locationid=$3
+          `,
+          [Number(r.qty), partid, locationid]
+        );
+      }
+
+      inventoryWritten++;
+    }
+
+    await client.query("COMMIT");
+
+    return res.status(200).json({
+      success: true,
+      parts_created: partsCreated,
+      locations_created: locationsCreated,
+      inventory_records_written: inventoryWritten
+    });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("IMPORT ERROR:", err);
+    return res.status(500).json({ error: "Import failed" });
+  } finally {
+    client.release();
+  }
+}
+
   /* ======================================================
      BLOCK OTHER POSTs
      ====================================================== */
