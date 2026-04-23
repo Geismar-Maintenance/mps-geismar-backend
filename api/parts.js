@@ -192,7 +192,7 @@ const cost = safeInt(r.cost, 0);
           INSERT INTO partlocations (partid, locationid, qty)
           VALUES ($1,$2,$3)
           `,
-          [partid, locationid, Number(r.qty)]
+          [partid, locationid, qty]
         );
       } else {
         await client.query(
