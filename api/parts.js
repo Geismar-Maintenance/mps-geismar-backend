@@ -114,6 +114,9 @@ if (req.method === "POST" && req.query.action === "importInventory") {
     let inventoryWritten = 0;
 
     for (const r of rows) {
+     const qty = safeInt(r.qty, 0);
+const reorderlevel = safeInt(r.reorderlevel, 0);
+const cost = safeInt(r.cost, 0); 
       // --- PART ---
       const partRes = await client.query(
         "SELECT partid FROM masterparts WHERE partnumber = $1",
@@ -130,15 +133,16 @@ if (req.method === "POST" && req.query.action === "importInventory") {
             ($1,$2,$3,$4,$5,$6)
           RETURNING partid
           `,
-          [
-            r.partnumber,
-            r.description,
-            r.manufacturer || null,
-            r.model || null,
-          safeInt(cost, 0),
-          safeInt(reorderlevel, 0)
+          
+[
+  r.partnumber,
+  r.description,
+  r.manufacturer || null,
+  r.model || null,
+  reorderlevel, 
+  cost          
+]
 
-          ]
         );
         partid = ins.rows[0].partid;
         partsCreated++;
@@ -197,7 +201,7 @@ if (req.method === "POST" && req.query.action === "importInventory") {
           SET qty = $1
           WHERE partid = $2 AND locationid = $3
           `,
-          [Number(r.qty), partid, locationid]
+          [qty, partid, locationid]
         );
       }
 
