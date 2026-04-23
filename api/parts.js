@@ -18,6 +18,11 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
+  
+  function safeInt(value, defaultValue = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : defaultValue;
+}
 
   /* ======================================================
      ADMIN: CREATE MASTER PART
