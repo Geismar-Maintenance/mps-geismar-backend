@@ -201,11 +201,18 @@ export default async function handler(req, res) {
       inventory_records_written: inventoryWritten
     });
 
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error("IMPORT ERROR:", err);
-    return res.status(500).json({ error: "Import failed" });
-  } finally {
+ catch (err) {
+  await client.query("ROLLBACK");
+
+  console.error("IMPORT ERROR MESSAGE:", err.message);
+  console.error("IMPORT ERROR STACK:", err.stack);
+
+  return res.status(500).json({
+    error: "Import failed",
+    detail: err.message
+  });
+}
+ finally {
     client.release();
   }
 }
