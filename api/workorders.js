@@ -46,12 +46,6 @@ if (req.method === "GET" && req.query.id) {
   return res.status(200).json(result.rows[0]);
 }
 
-      if (result.rowCount === 0) {
-    return res.status(404).json({ error: "Work order not found" });
-  }
-
-  return res.status(200).json(result.rows[0]);
-}
     /* ======================================================
        GET – WORK ORDERS
        ====================================================== */
