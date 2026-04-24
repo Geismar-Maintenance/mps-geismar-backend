@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   }
 
   try {
-        // GET /api/workorders/:id
+// GET /api/workorders?id=#
 if (req.method === "GET" && req.query.id) {
   const woid = Number(req.query.id);
 
@@ -29,8 +29,8 @@ if (req.method === "GET" && req.query.id) {
       w.description,
       w.assetid,
       w.priority,
-      w.type AS type,
-      w.status AS stsus,
+      w.wotype AS type,
+      s.status AS status,
       w.duedate
     FROM workorders w
     LEFT JOIN wostatus s ON s.id = w.status
@@ -45,6 +45,7 @@ if (req.method === "GET" && req.query.id) {
 
   return res.status(200).json(result.rows[0]);
 }
+
 
     /* ======================================================
        GET – WORK ORDERS
