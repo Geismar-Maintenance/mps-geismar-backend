@@ -24,17 +24,19 @@ if (req.method === "GET" && req.query.id) {
 
   const result = await pool.query(
     `
-    SELECT
-      w.woid,
-      w.description,
-      w.assetid,
-      w.priority,
-      w.wotype AS type,
-      s.status AS status,
-      w.duedate
-    FROM workorders w
-    LEFT JOIN wostatus s ON s.id = w.status
-    WHERE w.woid = $1
+SELECT
+  w.woid,
+  w.description,
+  w.assetid,
+  w.priority,
+  w.wotype AS type,
+  s.status AS status,
+  w.duedate,
+  u.display_name AS created_by
+FROM workorders w
+LEFT JOIN wostatus s ON s.id = w.status
+LEFT JOIN users u ON u.userid = w.created_by_userid
+WHERE w.woid = $1
     `,
     [woid]
   );
