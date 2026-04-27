@@ -58,8 +58,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Login failed" });
     }
   }
-  return res.status(405).json({ error: "Method not allowed" });
-}
 
   /* ==========================
      LOOKUPS (GET only)
