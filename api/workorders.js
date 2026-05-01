@@ -22,7 +22,7 @@ export default async function handler(req, res) {
 if (req.method === "GET" && req.query.id) {
   const woid = Number(req.query.id);
 
-  const result = await pool.query(
+  const woRes = await pool.query(
     `
 SELECT
   w.woid,
@@ -32,16 +32,18 @@ SELECT
   w.wotype AS type,
   s.status AS status,
   w.duedate,
+  w.workperformed,
+  w.workperformed_by,
   u.display_name AS created_by
-FROM workorders w
-LEFT JOIN wostatus s ON s.id = w.status
-LEFT JOIN users u ON u.userid = w.created_by_userid
-WHERE w.woid = $1
+    FROM workorders w
+    LEFT JOIN wostatus s ON s.id = w.status
+    LEFT JOIN users u ON u.userid = w.created_by_userid
+    WHERE w.woid = $1
     `,
     [woid]
   );
 
-  if (result.rowCount === 0) {
+  if (woRes.rowCount === 0) {
     return res.status(404).json({ error: "Work order not found" });
   }
 
