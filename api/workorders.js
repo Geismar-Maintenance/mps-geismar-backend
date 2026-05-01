@@ -28,18 +28,21 @@ SELECT
   w.woid,
   w.description,
   w.assetid,
+  a.assetname,                       
   w.priority,
   w.wotype AS type,
   s.status AS status,
   w.duedate,
+  w.closeddate,                      
   w.workperformed,
-  w.workperformed_by,
+  cu.display_name AS workperformed_by,
   u.display_name AS created_by
-    FROM workorders w
-    LEFT JOIN wostatus s ON s.id = w.status
-    LEFT JOIN users u ON u.userid = w.created_by_userid
-    LEFT JOIN assets a ON a.assetid = w.assetid
-    WHERE w.woid = $1
+FROM workorders w
+LEFT JOIN wostatus s ON s.id = w.status
+LEFT JOIN users u ON u.userid = w.created_by_userid
+LEFT JOIN users cu ON cu.userid = w.completed_by_userid
+LEFT JOIN assets a ON a.assetid = w.assetid
+WHERE w.woid = $1
     `,
     [woid]
   );
