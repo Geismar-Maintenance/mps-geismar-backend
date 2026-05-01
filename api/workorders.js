@@ -38,6 +38,7 @@ SELECT
     FROM workorders w
     LEFT JOIN wostatus s ON s.id = w.status
     LEFT JOIN users u ON u.userid = w.created_by_userid
+    LEFT JOIN assets a ON a.assetid = w.assetid
     WHERE w.woid = $1
     `,
     [woid]
