@@ -5,6 +5,17 @@ import {
   insertAudit
 } from "../lib/db";
 
+function setCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
 /**
  * MAIN HANDLER (Vercel Serverless Function)
  */
