@@ -31,35 +31,28 @@ export default async function handler(req, res) {
       // ---------------------------
       // VERIFY USER + PIN (SQL HANDLES HASH)
       // ---------------------------
-      const userCheck = await pool.query(
-        `SELECT * FROM users 
-         WHERE username = $1 
-         AND pin_hash = crypt($2, pin_hash)`,
-        [username, currentPin]
-      );
+const userResult = await pool.query(
+  `SELECT * FROM users 
+   WHERE username = $1 
+   AND pin_hash = crypt($2, pin_hash)
+   AND active = true`,
+  [username, currentPin]
+);
 
-      if (userCheck.rows.length === 0) {
-        return res.status(401).json({ error: "Current PIN incorrect" });
-      }
+const user = userResult.rows[0];
 
-      const user = userCheck.rows[0];
-
+if (!user) {
+  return res.status(401).json({ error: "Current PIN incorrect" });
+}
       // ---------------------------
       // UPDATE NEW PIN (HASHED IN DB)
       // ---------------------------
-      await pool.query(
-        `UPDATE users 
-         SET pin_hash = crypt($1, gen_salt('bf')) 
-         WHERE id = $2`,
-        [newPin, user.id]
-      );
-
-      // Audit log
-      await pool.query(
-        `INSERT INTO audit_log (user_id, action, timestamp)
-         VALUES ($1, $2, NOW())`,
-        [user.id, "PIN_CHANGE"]
-      );
+     await pool.query(
+  `UPDATE users 
+   SET pin_hash = crypt($1, gen_salt('bf'))
+   WHERE username = $2`,
+  [newPin, username]
+);
 
       return res.status(200).json({ success: true });
     }
