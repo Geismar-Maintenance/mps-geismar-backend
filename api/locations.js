@@ -8,7 +8,8 @@ const pool = new Pool({
 });
 
 export default async function handler(req, res) {
-  // ✅ CORS
+
+  // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -22,8 +23,53 @@ export default async function handler(req, res) {
   }
 
   try {
-    const result = await pool.query(
-      `
+
+    /* ======================================================
+       MOVE DESTINATIONS (TO dropdown)
+       ====================================================== */
+    if (req.query.type === "move_dest") {
+
+      const result = await pool.query(`
+        SELECT
+          locationid,
+          cabinet,
+          section,
+          bin,
+          description
+        FROM locations
+        WHERE isactive = true
+          AND isreceiving = false
+        ORDER BY cabinet, section, bin
+      `);
+
+      return res.status(200).json(result.rows);
+    }
+
+    /* ======================================================
+       RECEIVING LOCATIONS
+       ====================================================== */
+    if (req.query.type === "receiving") {
+
+      const result = await pool.query(`
+        SELECT
+          locationid,
+          cabinet,
+          section,
+          bin,
+          description
+        FROM locations
+        WHERE isactive = true
+          AND isreceiving = true
+        ORDER BY cabinet, section, bin
+      `);
+
+      return res.status(200).json(result.rows);
+    }
+
+    /* ======================================================
+       DEFAULT: ALL ACTIVE LOCATIONS (ADMIN / SETUP)
+       ====================================================== */
+    const result = await pool.query(`
       SELECT
         locationid,
         cabinet,
@@ -35,8 +81,7 @@ export default async function handler(req, res) {
       FROM locations
       WHERE isactive = true
       ORDER BY cabinet, section, bin
-      `
-    );
+    `);
 
     return res.status(200).json(result.rows);
 
