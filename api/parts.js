@@ -235,44 +235,54 @@ async function getInventoryFilter(res, type) {
    INVENTORY FILTER (Receiving)
 ====================================================== */
 async function getReceivingParts(res) {
-  const result = await query(
-    `
+  const result = await query(`
     SELECT
       p.partid,
       p.partnumber,
       p.description,
       p.manufacturer,
       p.model,
-      COALESCE(SUM(pl.qty), 0)::int AS total_qty
-    FROM masterparts p
-    JOIN partlocations pl ON pl.partid = p.partid
-    JOIN locations l ON l.locationid = pl.locationid
-    WHERE COALESCE(l.isreceiving, false) = true
-    GROUP BY
-      p.partid,
-      p.partnumber,
-      p.description,
-      p.manufacturer,
-      p.model
-    ORDER BY p.partnumber
-    `
-  );
-
-  const locations = await query(
-    `
-    SELECT pl.partid, l.cabinet, l.section, l.bin, pl.qty
+      pl.qty AS total_qty,
+      l.cabinet,
+      l.section,
+      l.bin
     FROM partlocations pl
     JOIN locations l ON l.locationid = pl.locationid
+    JOIN masterparts p ON p.partid = pl.partid
     WHERE COALESCE(l.isreceiving, false) = true
-    `
-  );
+      AND pl.qty > 0
+    ORDER BY p.partnumber, l.cabinet, l.section, l.bin
+  `);
 
-  return res.status(200).json(
-    result.rows.map(p => ({
-      ...p,
-      locations: locations.rows.filter(l => l.partid === p.partid)
-    }))
-  );
+  const grouped = result.rows.reduce((acc, row) => {
+    let part = acc.find(p => p.partid === row.partid);
+
+    if (!part) {
+      part = {
+        partid: row.partid,
+        partnumber: row.partnumber,
+        description: row.description,
+        manufacturer: row.manufacturer,
+        model: row.model,
+        total_qty: 0,
+        locations: []
+      };
+      acc.push(part);
+    }
+
+    part.total_qty += row.total_qty;
+
+    part.locations.push({
+      cabinet: row.cabinet,
+      section: row.section,
+      bin: row.bin,
+      qty: row.total_qty
+    });
+
+    return acc;
+  }, []);
+
+  return res.status(200).json(grouped);
 }
 /* ======================================================
    INVENTORY SUMMARY
