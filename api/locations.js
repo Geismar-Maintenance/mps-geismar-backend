@@ -11,14 +11,71 @@ export default async function handler(req, res) {
 
   // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  if (req.method !== "GET") {
+  if (req.method === "POST") {
+  try {
+    const {
+      cabinet,
+      section,
+      bin,
+      description = null,
+      isreceiving = false
+    } = req.body;
+
+    if (!cabinet || !section || !bin) {
+      return res.status(400).json({
+        error: "cabinet, section, and bin are required"
+      });
+    }
+
+    // ✅ prevent duplicates
+    const existing = await pool.query(
+      `
+      SELECT 1 FROM locations
+      WHERE cabinet = $1 AND section = $2 AND bin = $3
+      `,
+      [cabinet, section, bin]
+    );
+
+    if (existing.rowCount > 0) {
+      return res.status(400).json({
+        error: "Location already exists"
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO locations (
+        cabinet,
+        section,
+        bin,
+        description,
+        isreceiving,
+        isactive
+      )
+      VALUES ($1, $2, $3, $4, $5, true)
+      RETURNING *
+      `,
+      [cabinet, section, bin, description, isreceiving]
+    );
+
+    return res.status(201).json(result.rows[0]);
+
+  } catch (err) {
+    console.error("ERROR creating location:", err);
+    return res.status(500).json({
+      error: "Failed to create location"
+    });
+  }
+}
+
+  if (req.method !== "GET" && req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
