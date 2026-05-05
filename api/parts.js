@@ -185,7 +185,14 @@ async function getInventoryFilter(res, type) {
         COALESCE(SUM(pl.qty), 0)::int AS total_qty
       FROM masterparts p
       LEFT JOIN partlocations pl ON p.partid = pl.partid
-      GROUP BY p.partid
+      GROUP BY
+        p.partid,
+        p.partnumber,
+        p.manufacturer,
+        p.model,
+        p.description,
+        p.cost,
+        p.reorderlevel
     )
 
     SELECT *
@@ -207,7 +214,22 @@ async function getInventoryFilter(res, type) {
     [type]
   );
 
-  return res.status(200).json(result.rows);
+  // 👇 ADD THIS (same pattern as searchParts)
+  const locations = await query(
+    `
+    SELECT pl.partid, l.cabinet, l.section, l.bin, pl.qty
+    FROM partlocations pl
+    JOIN locations l ON l.locationid = pl.locationid
+    WHERE pl.qty > 0
+    `
+  );
+
+  const merged = result.rows.map(p => ({
+    ...p,
+    locations: locations.rows.filter(l => l.partid === p.partid)
+  }));
+
+  return res.status(200).json(merged);
 }
 /* ======================================================
    INVENTORY FILTER (Receiving)
