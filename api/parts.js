@@ -171,19 +171,20 @@ async function searchParts(res, search) {
 
 async function getInventoryFilter(res, type) {
   const result = await query(
-    `WITH inventory AS (
-        SELECT
-          p.partid,
-          p.partnumber,
-          p.manufacturer,
-          p.model,
-          p.description,
-          p.cost,
-          p.reorderlevel,
-          COALESCE(SUM(pl.qty), 0)::int AS total_qty
-        FROM masterparts p
-        LEFT JOIN partlocations pl ON p.partid = pl.partid
-        GROUP BY 
+    `
+    WITH inventory AS (
+      SELECT
+        p.partid,
+        p.partnumber,
+        p.manufacturer,
+        p.model,
+        p.description,
+        p.cost,
+        p.reorderlevel,
+        COALESCE(SUM(pl.qty), 0)::int AS total_qty
+      FROM masterparts p
+      LEFT JOIN partlocations pl ON p.partid = pl.partid
+      GROUP BY
         p.partid,
         p.partnumber,
         p.manufacturer,
@@ -191,17 +192,31 @@ async function getInventoryFilter(res, type) {
         p.description,
         p.cost,
         p.reorderlevel
-     )
-     SELECT *
-     FROM inventory
-     WHERE
-       ($1 = 'out' AND total_qty = 0)
-       OR
-       ($1 = 'low'
-        AND reorderlevel > 0
-        AND total_qty > 0
-        AND total_qty <= reorderlevel)
-     ORDER BY partnumber`,
+    )
+
+    SELECT *
+    FROM inventory
+    WHERE
+      CASE
+        WHEN $1 = 'out' THEN total_qty = 0
+
+        WHEN $1 = 'low' THEN
+          reorderlevel > 0
+          AND total_qty > 0
+          AND total_qty <= reorderlevel
+
+        WHEN $1 = 'in' THEN
+          total_qty > 0
+
+        WHEN $1 = 'all' THEN
+          true
+
+        ELSE
+          true
+      END
+
+    ORDER BY partnumber
+    `,
     [type]
   );
 
