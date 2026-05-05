@@ -184,34 +184,23 @@ async function getInventoryFilter(res, type) {
         COALESCE(SUM(pl.qty), 0)::int AS total_qty
       FROM masterparts p
       LEFT JOIN partlocations pl ON p.partid = pl.partid
-      GROUP BY
-        p.partid,
-        p.partnumber,
-        p.manufacturer,
-        p.model,
-        p.description,
-        p.cost,
-        p.reorderlevel
+      GROUP BY p.partid
     )
 
     SELECT *
     FROM inventory
-WHERE
-  CASE
-    WHEN $1 = 'all' THEN true
-
-    WHEN $1 = 'out' THEN total_qty = 0
-
-    WHEN $1 = 'in' THEN total_qty > 0
-
-    WHEN $1 = 'low' THEN
-      reorderlevel > 0
-      AND total_qty > 0
-      AND total_qty <= reorderlevel
-
-    ELSE true
-  END
-
+    WHERE
+      (
+        $1 = 'all'
+        OR ($1 = 'out' AND total_qty = 0)
+        OR ($1 = 'in' AND total_qty > 0)
+        OR (
+          $1 = 'low'
+          AND reorderlevel > 0
+          AND total_qty > 0
+          AND total_qty <= reorderlevel
+        )
+      )
     ORDER BY partnumber
     `,
     [type]
