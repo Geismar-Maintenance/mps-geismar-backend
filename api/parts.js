@@ -58,13 +58,14 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const { partId, search, summary, inventory, history, receiving } = req.query;
 
-      if (partId) return await getPartDetails(req, res, partId);
-      if (history === "true") return await getHistory(res);
-      if (summary === "inventory") return await getInventorySummary(res);
-      if (inventory) return await getInventoryFilter(res, inventory);
-      if (receiving === "true") return await getReceivingParts(res);
-      if (search) return await searchParts(res, search);
-            
+    if (partId) return await getPartDetails(req, res, partId);
+    if (history === "true") return await getHistory(res);
+    if (summary === "inventory") return await getInventorySummary(res);
+    if (receiving === "true") return await getReceivingParts(res);
+    if (search) return await searchParts(res, search);
+
+// default route = inventory
+return await getInventoryFilter(res, inventory || "all");
 
       return res.status(200).json([]);
     }
