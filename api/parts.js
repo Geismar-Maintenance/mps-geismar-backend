@@ -237,38 +237,24 @@ async function getInventoryFilter(res, type) {
 async function getReceivingParts(res) {
   const result = await query(
     `
-    WITH inventory AS (
-      SELECT
-        p.partid,
-        p.partnumber,
-        p.description,
-        p.manufacturer,
-        p.model,
-        COALESCE(SUM(pl.qty), 0)::int AS total_qty
-      FROM masterparts p
-      LEFT JOIN partlocations pl ON p.partid = pl.partid
-      GROUP BY
-        p.partid,
-        p.partnumber,
-        p.description,
-        p.manufacturer,
-        p.model
-    ),
-
-    receiving_parts AS (
-      SELECT DISTINCT pl.partid
-      FROM partlocations pl
-      JOIN locations l ON l.locationid = pl.locationid
-      WHERE l.isreceiving = true
-    )
-
-    SELECT i.*
-    FROM inventory i
-    LEFT JOIN receiving_parts r ON r.partid = i.partid
-    WHERE
-      r.partid IS NOT NULL
-      OR i.total_qty = 0
-    ORDER BY i.partnumber
+    SELECT
+      p.partid,
+      p.partnumber,
+      p.description,
+      p.manufacturer,
+      p.model,
+      COALESCE(SUM(pl.qty), 0)::int AS total_qty
+    FROM masterparts p
+    JOIN partlocations pl ON pl.partid = p.partid
+    JOIN locations l ON l.locationid = pl.locationid
+    WHERE COALESCE(l.isreceiving, false) = true
+    GROUP BY
+      p.partid,
+      p.partnumber,
+      p.description,
+      p.manufacturer,
+      p.model
+    ORDER BY p.partnumber
     `
   );
 
@@ -277,16 +263,16 @@ async function getReceivingParts(res) {
     SELECT pl.partid, l.cabinet, l.section, l.bin, pl.qty
     FROM partlocations pl
     JOIN locations l ON l.locationid = pl.locationid
-    WHERE pl.qty > 0
+    WHERE COALESCE(l.isreceiving, false) = true
     `
   );
 
-  const merged = result.rows.map(p => ({
-    ...p,
-    locations: locations.rows.filter(l => l.partid === p.partid)
-  }));
-
-  return res.status(200).json(merged);
+  return res.status(200).json(
+    result.rows.map(p => ({
+      ...p,
+      locations: locations.rows.filter(l => l.partid === p.partid)
+    }))
+  );
 }
 /* ======================================================
    INVENTORY SUMMARY
