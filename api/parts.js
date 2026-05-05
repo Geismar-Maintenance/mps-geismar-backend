@@ -234,26 +234,6 @@ async function getInventoryFilter(res, type) {
 /* ======================================================
    INVENTORY FILTER (Receiving)
 ====================================================== */
-async function getReceivingParts(res) {
-  const result = await query(`
-    SELECT
-      p.partid,
-      p.partnumber,
-      p.description,
-      p.manufacturer,
-      p.model,
-      pl.qty AS total_qty,
-      l.cabinet,
-      l.section,
-      l.bin
-    FROM partlocations pl
-    JOIN locations l ON l.locationid = pl.locationid
-    JOIN masterparts p ON p.partid = pl.partid
-    WHERE COALESCE(l.isreceiving, false) = true
-      AND pl.qty > 0
-    ORDER BY p.partnumber, l.cabinet, l.section, l.bin
-  `);
-
   async function getReceivingParts(res) {
   const result = await query(`
     SELECT
