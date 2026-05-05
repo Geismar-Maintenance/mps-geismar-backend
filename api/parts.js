@@ -196,18 +196,21 @@ async function getInventoryFilter(res, type) {
 
     SELECT *
     FROM inventory
-    WHERE
-      (
-        $1 = 'all'
-        OR ($1 = 'out' AND total_qty = 0)
-        OR ($1 = 'in' AND total_qty > 0)
-        OR (
-          $1 = 'low'
-          AND reorderlevel > 0
-          AND total_qty > 0
-          AND total_qty <= reorderlevel
-        )
-      )
+WHERE
+  CASE
+    WHEN $1 = 'all' THEN true
+
+    WHEN $1 = 'out' THEN total_qty = 0
+
+    WHEN $1 = 'in' THEN total_qty > 0
+
+    WHEN $1 = 'low' THEN
+      reorderlevel > 0
+      AND total_qty > 0
+      AND total_qty <= reorderlevel
+
+    ELSE true
+  END
 
     ORDER BY partnumber
     `,
