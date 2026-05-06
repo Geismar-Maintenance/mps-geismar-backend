@@ -96,14 +96,15 @@ async function getPartDetails(req, res, partId) {
     return res.status(404).json({ error: "Part not found" });
   }
 
-  const locations = await query(
-    `SELECT l.cabinet, l.section, l.bin, pl.qty
-     FROM partlocations pl
-     JOIN locations l ON l.locationid = pl.locationid
-     WHERE pl.partid = $1 AND pl.qty > 0
-     ORDER BY l.cabinet, l.section, l.bin`,
-    [id]
-  );
+
+const locations = await query(
+  `SELECT pl.locationid, l.cabinet, l.section, l.bin, pl.qty
+   FROM partlocations pl
+   JOIN locations l ON l.locationid = pl.locationid
+   WHERE pl.partid = $1 AND pl.qty > 0
+   ORDER BY l.cabinet, l.section, l.bin`,
+  [id]
+);
 
   const history = await query(
     `SELECT t.transactiondate, tt.transactiontype, t.qty, t.performed_by
