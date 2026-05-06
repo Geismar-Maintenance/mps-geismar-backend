@@ -2,20 +2,10 @@ export const runtime = "nodejs";
 
 import { Pool } from "pg";
 
-let pool;
-
-function getPool() {
-  if (!pool) {
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: {
-        require: true,
-        rejectUnauthorized: false
-      }
-    });
-  }
-  return pool;
-}
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 
 export default async function handler(req, res) {
   const { type } = req.query;
