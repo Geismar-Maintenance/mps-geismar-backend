@@ -7,12 +7,25 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// ✅ Transaction types (single source of truth)
-const TRANSACTION_TYPES = {
-  ISSUE: 1,
-  RECEIVE: 2,
-  MOVE: 3
-};
+let TRANSACTION_TYPES = {};
+let typesLoaded = false;
+
+async function loadTransactionTypes() {
+  if (typesLoaded) return;
+
+  const res = await pool.query(
+    `SELECT transactiontypeid, transactiontype FROM transactiontypes`
+  );
+
+  const map = {};
+
+  res.rows.forEach(row => {
+    map[row.transactiontype.toUpperCase()] = row.transactiontypeid;
+  });
+
+  TRANSACTION_TYPES = map;
+  typesLoaded = true;
+}
 
 const RECEIVING_LOCATION_ID = 1;
 
@@ -24,6 +37,8 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
+
+  await loadTransactionTypes();
 
   try {
     // ✅ GET — transaction history (UNCHANGED)
@@ -395,8 +410,28 @@ async function handleCycleCount(req, res) {
     return res.status(400).json({ error: "Invalid cycle count data" });
   }
 
+  const client = await pool.connect();
+
   try {
-    await pool.query(
+    await client.query("BEGIN");
+
+    // ✅ Ensure the record exists and lock it
+    const check = await client.query(
+      `
+      SELECT qty
+      FROM partlocations
+      WHERE partid = $1 AND locationid = $2
+      FOR UPDATE
+      `,
+      [partid, locationid]
+    );
+
+    if (check.rowCount === 0) {
+      throw new Error("Location/part not found");
+    }
+
+    // ✅ Update quantity
+    await client.query(
       `
       UPDATE partlocations
       SET qty = $1
@@ -405,10 +440,27 @@ async function handleCycleCount(req, res) {
       [qty, partid, locationid]
     );
 
-    return res.status(200).json({ success: true });
+    // ✅ Log transaction ONLY if update succeeds
+    await client.query(
+      `
+      INSERT INTO transactions (
+        transactiontypeid,
+        partid,
+        from_locationid,
+        qty,
+        performed_by,
+        transactiondate
+      )
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      `,
+      [
+        4, // ✅ cycle_count (safe to hardcode for now)
+        partid,
+        locationid,
+        qty,
+        performed_by
+      ]
+    );
 
-  } catch (err) {
-    console.error("CYCLE COUNT FAILED:", err);
-    return res.status(500).json({ error: "Cycle count failed" });
-  }
-}
+    await client.query("COMMIT");
+
