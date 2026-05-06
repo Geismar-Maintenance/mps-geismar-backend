@@ -380,18 +380,35 @@ async function handleReceive(req, res) {
 /* =========================================================
    CYCLE COUNT
 ========================================================= */
-if (type === "cycle_count") {
+async function handleCycleCount(req, res) {
+  const partid = Number(req.body.partid);
+  const locationid = Number(req.body.locationid);
+  const qty = Number(req.body.qty);
+  const performed_by = req.body.performed_by ?? "system";
 
-  const { partid, locationid, qty } = req.body;
+  if (
+    !Number.isInteger(partid) ||
+    !Number.isInteger(locationid) ||
+    !Number.isInteger(qty) ||
+    qty < 0
+  ) {
+    return res.status(400).json({ error: "Invalid cycle count data" });
+  }
 
-  await pool.query(
-    `
-    UPDATE partlocations
-    SET qty = $1
-    WHERE partid = $2 AND locationid = $3
-    `,
-    [qty, partid, locationid]
-  );
+  try {
+    await pool.query(
+      `
+      UPDATE partlocations
+      SET qty = $1
+      WHERE partid = $2 AND locationid = $3
+      `,
+      [qty, partid, locationid]
+    );
 
-  return res.json({ success: true });
+    return res.status(200).json({ success: true });
+
+  } catch (err) {
+    console.error("CYCLE COUNT FAILED:", err);
+    return res.status(500).json({ error: "Cycle count failed" });
+  }
 }
