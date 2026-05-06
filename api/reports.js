@@ -38,23 +38,20 @@ export default async function handler(req, res) {
 
       const result = await db.query(
         `
-        SELECT
-          p.partid,
-          p.partnumber,
-          p.description,
-          l.cabinet,
-          l.section,
-          l.bin,
-          pl.qty
-        FROM partlocations pl
-        JOIN parts p ON p.partid = pl.partid
-        JOIN locations l ON l.locationid = pl.locationid
-        WHERE UPPER(l.cabinet) = UPPER($1)
-          AND UPPER(l.section) = UPPER($2)
-        ORDER BY l.bin, p.partnumber
-        `,
-        [cabinet, section]
-      );
+SELECT
+  p.partid,
+  p.partnumber,
+  p.description,
+  l.cabinet,
+  l.section,
+  l.bin,
+  pl.qty
+FROM partlocations pl
+JOIN masterparts p ON p.partid = pl.partid
+JOIN locations l ON l.locationid = pl.locationid
+WHERE l.cabinet = $1
+  AND l.section = $2
+ORDER BY l.bin, p.partnumber
 
       return res.status(200).json(result.rows);
     }
