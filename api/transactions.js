@@ -372,3 +372,22 @@ async function handleReceive(req, res) {
     client.release();
   }
 }
+
+/* =========================================================
+   CYCLE COUNT
+========================================================= */
+if (type === "cycle_count") {
+
+  const { partid, locationid, qty } = req.body;
+
+  await pool.query(
+    `
+    UPDATE partlocations
+    SET qty = $1
+    WHERE partid = $2 AND locationid = $3
+    `,
+    [qty, partid, locationid]
+  );
+
+  return res.json({ success: true });
+}
