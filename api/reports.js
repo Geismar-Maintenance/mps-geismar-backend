@@ -1,15 +1,32 @@
-import pool from '../../lib/db.js'; // adjust path if needed
+export const runtime = "nodejs";
+
+import { Pool } from "pg";
+
+let pool;
+
+function getPool() {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      }
+    });
+  }
+  return pool;
+}
 
 export default async function handler(req, res) {
-
   const { type } = req.query;
+  const db = getPool();
 
   try {
 
-    // ============================
-    // INVENTORY SECTION REPORT
-    // ============================
-    if (type === 'inventory-section') {
+    // =========================================
+    // INVENTORY BY CABINET / SECTION
+    // =========================================
+    if (type === "inventory-section") {
 
       const { cabinet, section } = req.query;
 
@@ -19,7 +36,7 @@ export default async function handler(req, res) {
         });
       }
 
-      const result = await pool.query(
+      const result = await db.query(
         `
         SELECT
           p.partid,
@@ -42,9 +59,9 @@ export default async function handler(req, res) {
       return res.status(200).json(result.rows);
     }
 
-    // ============================
-    // UNKNOWN REPORT
-    // ============================
+    // =========================================
+    // UNKNOWN REPORT TYPE
+    // =========================================
     return res.status(400).json({
       error: "Invalid report type"
     });
