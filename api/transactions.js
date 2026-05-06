@@ -66,22 +66,26 @@ export default async function handler(req, res) {
 
     // ✅ POST — route to correct handler
     if (req.method === "POST") {
-      const { type } = req.body;
+  const { type } = req.body;
 
-      switch (type) {
-        case "issue":
-          return await handleIssue(req, res);
+  switch (type) {
+    case "issue":
+      return await handleIssue(req, res);
 
-        case "move":
-          return await handleMove(req, res);
+    case "move":
+      return await handleMove(req, res);
 
-        case "receive":
-          return await handleReceive(req, res);
+    case "receive":
+      return await handleReceive(req, res);
 
-        default:
-          return res.status(400).json({ error: "Invalid transaction type" });
-      }
-    }
+    case "cycle_count": // ✅ ADD THIS
+      return await handleCycleCount(req, res);
+
+    default:
+      return res.status(400).json({ error: "Invalid transaction type" });
+  }
+}
+
 
     return res.status(405).json({ error: "Method not allowed" });
 
