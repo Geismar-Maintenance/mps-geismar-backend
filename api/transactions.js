@@ -7,28 +7,14 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-let TRANSACTION_TYPES = {};
-let typesLoaded = false;
+// ✅ Transaction types (single source of truth)
+const TRANSACTION_TYPES = {
+  ISSUE: 1,
+  RECEIVE: 2,
+  MOVE: 3
+};
 
 const RECEIVING_LOCATION_ID = 1;
-
-  async function loadTransactionTypes() {
-  if (typesLoaded) return;
-
-  const res = await pool.query(
-    `SELECT transactiontypeid, transactiontype FROM transactiontypes`
-  );
-
-  const map = {};
-
-  res.rows.forEach(row => {
-    map[row.transactiontype.toUpperCase()] = row.transactiontypeid;
-  });
-
-  TRANSACTION_TYPES = map;
-  typesLoaded = true;
-}
-
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -39,9 +25,8 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  try{
-    await loadTransactionTypes();
-     // ✅ GET — transaction history (UNCHANGED)
+  try {
+    // ✅ GET — transaction history (UNCHANGED)
     if (req.method === "GET") {
       const result = await pool.query(`
         SELECT
@@ -79,29 +64,24 @@ export default async function handler(req, res) {
       return res.status(200).json(result.rows);
     }
 
-
     // ✅ POST — route to correct handler
     if (req.method === "POST") {
-  const { type } = req.body;
+      const { type } = req.body;
 
-  switch (type) {
-    case "issue":
-      return await handleIssue(req, res);
+      switch (type) {
+        case "issue":
+          return await handleIssue(req, res);
 
-    case "move":
-      return await handleMove(req, res);
+        case "move":
+          return await handleMove(req, res);
 
-    case "receive":
-      return await handleReceive(req, res);
+        case "receive":
+          return await handleReceive(req, res);
 
-    case "cycle_count": // ✅ ADD THIS
-      return await handleCycleCount(req, res);
-
-    default:
-      return res.status(400).json({ error: "Invalid transaction type" });
-  }
-}
-
+        default:
+          return res.status(400).json({ error: "Invalid transaction type" });
+      }
+    }
 
     return res.status(405).json({ error: "Method not allowed" });
 
@@ -392,76 +372,3 @@ async function handleReceive(req, res) {
     client.release();
   }
 }
-
-/* =========================================================
-   CYCLE COUNT
-========================================================= */
-async function handleCycleCount(req, res) {
-  const partid = Number(req.body.partid);
-  const locationid = Number(req.body.locationid);
-  const qty = Number(req.body.qty);
-  const performed_by = req.body.performed_by ?? "system";
-
-  if (
-    !Number.isInteger(partid) ||
-    !Number.isInteger(locationid) ||
-    !Number.isInteger(qty) ||
-    qty < 0
-  ) {
-    return res.status(400).json({ error: "Invalid cycle count data" });
-  }
-
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-
-    // ✅ Ensure the record exists and lock it
-    const check = await client.query(
-      `
-      SELECT qty
-      FROM partlocations
-      WHERE partid = $1 AND locationid = $2
-      FOR UPDATE
-      `,
-      [partid, locationid]
-    );
-
-    if (check.rowCount === 0) {
-      throw new Error("Location/part not found");
-    }
-
-    // ✅ Update quantity
-    await client.query(
-      `
-      UPDATE partlocations
-      SET qty = $1
-      WHERE partid = $2 AND locationid = $3
-      `,
-      [qty, partid, locationid]
-    );
-
-    // ✅ Log transaction ONLY if update succeeds
-    await client.query(
-      `
-      INSERT INTO transactions (
-        transactiontypeid,
-        partid,
-        from_locationid,
-        qty,
-        performed_by,
-        transactiondate
-      )
-      VALUES ($1, $2, $3, $4, $5, NOW())
-      `,
-      [
-        4, // ✅ cycle_count (safe to hardcode for now)
-        partid,
-        locationid,
-        qty,
-        performed_by
-      ]
-    );
-
-    await client.query("COMMIT");
-
