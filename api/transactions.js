@@ -12,6 +12,24 @@ let typesLoaded = false;
 
 const RECEIVING_LOCATION_ID = 1;
 
+  async function loadTransactionTypes() {
+  if (typesLoaded) return;
+
+  const res = await pool.query(
+    `SELECT transactiontypeid, transactiontype FROM transactiontypes`
+  );
+
+  const map = {};
+
+  res.rows.forEach(row => {
+    map[row.transactiontype.toUpperCase()] = row.transactiontypeid;
+  });
+
+  TRANSACTION_TYPES = map;
+  typesLoaded = true;
+}
+
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -61,22 +79,6 @@ export default async function handler(req, res) {
       return res.status(200).json(result.rows);
     }
 
-    async function loadTransactionTypes() {
-  if (typesLoaded) return;
-
-  const res = await pool.query(
-    `SELECT transactiontypeid, transactiontype FROM transactiontypes`
-  );
-
-  const map = {};
-
-  res.rows.forEach(row => {
-    map[row.transactiontype.toUpperCase()] = row.transactiontypeid;
-  });
-
-  TRANSACTION_TYPES = map;
-  typesLoaded = true;
-}
 
     // ✅ POST — route to correct handler
     if (req.method === "POST") {
