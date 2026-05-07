@@ -11,7 +11,8 @@ const pool = new Pool({
 const TRANSACTION_TYPES = {
   ISSUE: 1,
   RECEIVE: 2,
-  MOVE: 3
+  MOVE: 3,
+  CYCLE_COUNT: 4
 };
 
 const RECEIVING_LOCATION_ID = 1;
@@ -77,6 +78,9 @@ export default async function handler(req, res) {
 
         case "receive":
           return await handleReceive(req, res);
+
+        case "cycle_count":
+          return await handleCycleCount(req, res);
 
         default:
           return res.status(400).json({ error: "Invalid transaction type" });
@@ -367,6 +371,89 @@ async function handleReceive(req, res) {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("RECEIVE FAILED:", err);
+    return res.status(400).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+}
+
+/* =========================================================
+   CYCLE COUNT
+========================================================= */
+async function handleCycleCount(req, res) {
+  const partid = Number(req.body.partid);
+  const locationid = Number(req.body.locationid);
+  const qty = Number(req.body.qty);
+  const performed_by = req.body.performed_by ?? "system";
+
+  if (
+    !Number.isInteger(partid) ||
+    !Number.isInteger(locationid) ||
+    !Number.isInteger(qty) ||
+    qty < 0
+  ) {
+    return res.status(400).json({ error: "Invalid cycle count data" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // ✅ Lock record
+    const check = await client.query(
+      `
+      SELECT qty
+      FROM partlocations
+      WHERE partid = $1 AND locationid = $2
+      FOR UPDATE
+      `,
+      [partid, locationid]
+    );
+
+    if (check.rowCount === 0) {
+      throw new Error("Location/part not found");
+    }
+
+    // ✅ Set exact quantity
+    await client.query(
+      `
+      UPDATE partlocations
+      SET qty = $1
+      WHERE partid = $2 AND locationid = $3
+      `,
+      [qty, partid, locationid]
+    );
+
+    // ✅ Log transaction (hardcoded type = SAFE)
+    await client.query(
+      `
+      INSERT INTO transactions (
+        transactiontypeid,
+        partid,
+        from_locationid,
+        qty,
+        performed_by,
+        transactiondate
+      )
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      `,
+      [
+        4,  // ✅ cycle_count
+        partid,
+        locationid,
+        qty,
+        performed_by
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(200).json({ success: true });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("CYCLE COUNT FAILED:", err);
     return res.status(400).json({ error: err.message });
   } finally {
     client.release();
