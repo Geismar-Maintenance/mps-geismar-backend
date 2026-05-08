@@ -50,8 +50,8 @@ export default async function handler(req, res) {
 ORDER BY
   l.cabinet,
   l.section,
-  regexp_split_to_array(l.bin, '[^0-9]+'),
-  l.bin,
+  regexp_replace(l.bin, '\D', '', 'g')::bigint,
+  regexp_replace(l.bin, '\d', '', 'g'),
   p.partnumber;
         `,
         [cabinet, section]
