@@ -47,13 +47,7 @@ export default async function handler(req, res) {
         WHERE l.cabinet = $1
           AND l.section LIKE $2
 ORDER BY
-  l.cabinet,
-  l.section,
-  regexp_replace(l.bin, '(\d+)', lpad('\1', 10, '0'), 'g'),
-  l.bin,
-  p.partnumber;
-        `,
-        [cabinet, section]
+ORDER BY l.bin, p.partnumber
       );
 
       return res.status(200).json(result.rows);
