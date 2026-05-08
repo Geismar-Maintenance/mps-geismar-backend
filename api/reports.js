@@ -46,7 +46,6 @@ export default async function handler(req, res) {
         JOIN locations l ON l.locationid = pl.locationid
         WHERE l.cabinet = $1
           AND l.section LIKE $2
-ORDER BY
 ORDER BY l.bin, p.partnumber
       );
 
