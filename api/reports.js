@@ -48,10 +48,11 @@ export default async function handler(req, res) {
           AND l.section LIKE $2
         ORDER BY
 ORDER BY
+ORDER BY
   l.cabinet,
   l.section,
-  regexp_replace(l.bin, '\D', '', 'g')::bigint,
-  regexp_replace(l.bin, '\d', '', 'g'),
+  regexp_replace(l.bin, '\d+', lpad('\&', 10, '0'), 'g'),
+  l.bin,
   p.partnumber;
         `,
         [cabinet, section]
