@@ -46,11 +46,11 @@ const result = await pool.query(
   JOIN locations l ON l.locationid = pl.locationid
   WHERE l.cabinet = $1
     AND l.section LIKE $2
- ORDER BY
-  l.cabinet,
-  l.section,
+ORDER BY
+  length(l.bin),
   l.bin,
-  p.partnumber
+  p.partnumber;
+
   `,
   [cabinet, section]
 );
