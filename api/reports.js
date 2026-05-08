@@ -31,7 +31,7 @@ export default async function handler(req, res) {
         });
       }
 
-     const result = await pool.query(
+const result = await pool.query(
   `
   SELECT
     p.partid,
@@ -46,11 +46,15 @@ export default async function handler(req, res) {
   JOIN locations l ON l.locationid = pl.locationid
   WHERE l.cabinet = $1
     AND l.section LIKE $2
-  ORDER BY l.bin, p.partnumber
+  ORDER BY
+    l.cabinet,
+    l.section,
+    regexp_replace(l.bin, '(\d+)', lpad('\1', 10, '0'), 'g'),
+    l.bin,
+    p.partnumber
   `,
   [cabinet, section]
 );
-
       return res.status(200).json(result.rows);
     }
 
