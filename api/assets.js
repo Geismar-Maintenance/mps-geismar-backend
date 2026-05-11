@@ -91,7 +91,7 @@ if (!asset_id || !week_id || !runtime_hours) {
       INSERT INTO asset_runtime_logs
       (asset_id, week_id, runtime_hours)
       VALUES ($1, $2, $3)
-    `, [asset_id, runtime_date, runtime_hours]);
+    `, [asset_id, week_id, runtime_hours]);
 
     // ✅ Update asset total runtime
     await client.query(`
