@@ -87,8 +87,9 @@ if (type === "missing-runtime") {
     FROM assets a
     CROSS JOIN previous_week pw
     LEFT JOIN asset_runtime_logs arl
-      ON arl.asset_id = a.assetid
-      AND arl.week_id = pw.week_id
+    ON arl.asset_id = a.assetid
+    AND arl.week_id = pw.week_id
+  
     WHERE 
       a.isactive = true
       AND a.asset_class = 'manufacturing'
