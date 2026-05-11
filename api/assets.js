@@ -73,11 +73,13 @@ async function handleRuntimeEntry(req, res) {
 
   const { asset_id, week_id, runtime_hours } = req.body;
 
-  if (!asset_id || !runtime_date || !runtime_hours) {
-    return res.status(400).json({
-      error: "asset_id, runtime_date, runtime_hours required"
-    });
-  }
+
+if (!asset_id || !week_id || !runtime_hours) {
+  return res.status(400).json({
+    error: "asset_id, week_id, runtime_hours required"
+  });
+}
+
 
   const client = await pool.connect();
 
