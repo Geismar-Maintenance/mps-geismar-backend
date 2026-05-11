@@ -50,7 +50,7 @@ export default async function handler(req, res) {
       const { action } = req.body;
 
       // ✅ Route by action
-      if (action === "runtime-entry") {
+      if (action === "add-runtime") {
         return await handleRuntimeEntry(req, res);
       }
 
@@ -71,7 +71,7 @@ export default async function handler(req, res) {
 // ===================================
 async function handleRuntimeEntry(req, res) {
 
-  const { asset_id, runtime_date, runtime_hours } = req.body;
+  const { asset_id, week_id, runtime_hours } = req.body;
 
   if (!asset_id || !runtime_date || !runtime_hours) {
     return res.status(400).json({
@@ -87,14 +87,14 @@ async function handleRuntimeEntry(req, res) {
     // ✅ Insert runtime log
     await client.query(`
       INSERT INTO asset_runtime_logs
-      (asset_id, runtime_date, runtime_hours)
+      (asset_id, week_id, runtime_hours)
       VALUES ($1, $2, $3)
     `, [asset_id, runtime_date, runtime_hours]);
 
     // ✅ Update asset total runtime
     await client.query(`
       UPDATE assets
-      SET runtime_hours = runtime_hours + $1
+      SET total_runtime = total_runtime + $1
       WHERE assetid = $2
     `, [runtime_hours, asset_id]);
 
