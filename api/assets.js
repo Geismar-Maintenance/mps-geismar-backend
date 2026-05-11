@@ -34,6 +34,7 @@ export default async function handler(req, res) {
           assetname
         FROM assets
         WHERE isactive = true
+        and asset_class = 'manufacturing'
         ORDER BY assetnumber
       `);
 
