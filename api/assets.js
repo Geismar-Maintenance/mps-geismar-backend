@@ -23,25 +23,45 @@ export default async function handler(req, res) {
     // ===================================
     // ✅ GET — FETCH ASSETS (UNCHANGED)
     // ===================================
-    if (req.method === "GET") {
+  if (req.method === "GET") {
 
-      const client = await pool.connect();
+  const { action } = req.query;
 
-      const result = await client.query(`
-        SELECT
-          assetid,
-          assetnumber,
-          assetname
-        FROM assets
-        WHERE isactive = true
-        and asset_class = 'manufacturing'
-        ORDER BY assetnumber
-      `);
+  // ✅ HANDLE WEEKS REQUEST
+  if (action === "weeks") {
 
-      client.release();
+    const client = await pool.connect();
 
-      return res.status(200).json(result.rows);
-    }
+    const result = await client.query(`
+      SELECT week_id
+      FROM calendar_weeks
+      ORDER BY week_id DESC
+      LIMIT 10
+    `);
+
+    client.release();
+
+    return res.status(200).json(result.rows);
+  }
+
+  // ✅ DEFAULT → ASSETS
+  const client = await pool.connect();
+
+  const result = await client.query(`
+    SELECT
+      assetid,
+      assetnumber,
+      assetname
+    FROM assets
+    WHERE isactive = true
+      AND asset_class = 'manufacturing'
+    ORDER BY assetnumber
+  `);
+
+  client.release();
+
+  return res.status(200).json(result.rows);
+}
 
     // ===================================
     // ✅ POST — RUNTIME ENTRY
