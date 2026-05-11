@@ -62,60 +62,46 @@ export default async function handler(req, res) {
     // ===============================
     // ✅ RUNTIME VALIDATION (NEW)
     // ===============================
-    if (type === "missing-runtime") {
+if (type === "missing-runtime") {
 
-      const result = await pool.query(`
-        WITH current_week AS (
-          SELECT *
-          FROM calendar_weeks
-          WHERE CURRENT_DATE BETWEEN week_start AND week_end
-        ),
+  const result = await pool.query(`
+    WITH current_week AS (
+      SELECT week_id, week_number, year
+      FROM calendar_weeks
+      WHERE CURRENT_DATE BETWEEN week_start AND week_end
+    ),
 
-        previous_week AS (
-          SELECT *
-          FROM calendar_weeks
-          WHERE (
-            (SELECT week_number FROM current_week) > 1
-            AND week_number = (SELECT week_number FROM current_week) - 1
-            AND year = (SELECT year FROM current_week)
-          )
-          OR (
-            (SELECT week_number FROM current_week) = 1
-            AND year = (SELECT year FROM current_week) - 1
-            AND week_number = (
-              SELECT MAX(week_number)
-              FROM calendar_weeks
-              WHERE year = (SELECT year FROM current_week) - 1
-            )
-          )
-        )
+    previous_week AS (
+      SELECT week_id, week_number, year
+      FROM calendar_weeks
+      WHERE week_id = (
+        SELECT week_id FROM current_week
+      ) - 1
+    )
 
-        SELECT 
-          a.assetid,
-          a.assetname,
-          pw.week_number,
-          pw.year
-        FROM assets a
-        CROSS JOIN previous_week pw
-        LEFT JOIN asset_runtime_logs arl
-          ON arl.asset_id = a.assetid
-          AND arl.runtime_date BETWEEN pw.week_start AND pw.week_end
-        WHERE a.isactive = true
-        GROUP BY a.assetid, a.assetname, pw.week_number, pw.year
-        HAVING COALESCE(SUM(arl.runtime_hours), 0) = 0;
-      `);
+    SELECT 
+      a.assetid,
+      a.assetname,
+      pw.week_number,
+      pw.year
+    FROM assets a
+    CROSS JOIN previous_week pw
+    LEFT JOIN asset_runtime_logs arl
+      ON arl.asset_id = a.assetid
+      AND arl.week_id = pw.week_id
+    WHERE 
+      a.isactive = true
+      AND a.asset_class = 'manufacturing'
+      AND arl.runtime_log_id IS NULL;
+  `);
 
-      return res.status(200).json({
-        missingAssets: result.rows,
-        hasMissing: result.rows.length > 0,
-        week: result.rows[0]?.week_number || null,
-        year: result.rows[0]?.year || null
-      });
-    }
-
-    return res.status(400).json({
-      error: "Invalid report type"
-    });
+  return res.status(200).json({
+    missingAssets: result.rows,
+    hasMissing: result.rows.length > 0,
+    week: result.rows[0]?.week_number || null,
+    year: result.rows[0]?.year || null
+  });
+}
 
   } catch (err) {
     console.error("REPORT ERROR:", err);
