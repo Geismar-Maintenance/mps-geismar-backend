@@ -73,27 +73,23 @@ async function handleRuntimeEntry(req, res) {
 
   const { asset_id, week_id, runtime_hours } = req.body;
 
-
-if (!asset_id || !week_id || !runtime_hours) {
-  return res.status(400).json({
-    error: "asset_id, week_id, runtime_hours required"
-  });
-}
-
+  if (!asset_id || !week_id || !runtime_hours) {
+    return res.status(400).json({
+      error: "asset_id, week_id, runtime_hours required"
+    });
+  }
 
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    // ✅ Insert runtime log
     await client.query(`
       INSERT INTO asset_runtime_logs
       (asset_id, week_id, runtime_hours)
       VALUES ($1, $2, $3)
     `, [asset_id, week_id, runtime_hours]);
 
-    // ✅ Update asset total runtime
     await client.query(`
       UPDATE assets
       SET total_runtime = total_runtime + $1
@@ -102,3 +98,17 @@ if (!asset_id || !week_id || !runtime_hours) {
 
     await client.query("COMMIT");
 
+    return res.status(200).json({ success: true });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("RUNTIME ERROR:", err);
+
+    return res.status(500).json({
+      error: "Transaction failed"
+    });
+
+  } finally {
+    client.release();
+  }
+}
