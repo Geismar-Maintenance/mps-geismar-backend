@@ -436,7 +436,8 @@ if (req.method === "POST" && action === "addTaskTier") {
           SELECT
             pm_block_id,
             block_hours,
-            sequence_order
+            sequence_order,
+            max_tier_order
           FROM pm_blocks
           WHERE pm_template_id = $1
           ORDER BY sequence_order
@@ -468,6 +469,7 @@ if (req.method === "POST" && action === "addTaskTier") {
         if (!currentBlock) {
           currentBlock = blocksResult.rows[0]; // wrap after 8000
         }
+        const maxTierOrder = currentBlock.max_tier_order;
 
         /* ------------------------------------------
            Forecast due dates
@@ -525,7 +527,6 @@ if (req.method === "POST" && action === "addTaskTier") {
 
         if (phase === "planning" && today >= generationDate) {
           const exists = await pmInstanceExists(
-            pool,
             asset.pm_template_id,
             currentBlock.pm_block_id
           );
@@ -584,7 +585,56 @@ if (req.method === "POST" && action === "addTaskTier") {
               ]
             );
 
-            actionTaken = `PM ${pmInstanceId}, WO ${woResult.rows[0].woid} created`;
+           
+ await pool.query(
+    `
+    INSERT INTO pm_task_instances (
+      pm_instance_id,
+      pm_task_template_id,
+      completed
+    )
+    SELECT
+      $1,
+      t.pm_task_template_id,
+      false
+    FROM pm_task_templates t
+    JOIN pm_task_tiers tier
+      ON tier.pm_task_tier_id = t.pm_task_tier_id
+    WHERE
+      t.pm_template_id = $2
+      AND tier.tier_order <= $3
+    `,
+    [
+      pmInstanceId,
+      asset.pm_template_id,
+      maxTierOrder   // ✅ THIS IS YOUR KEY VARIABLE
+    ]
+  );
+
+  
+await pool.query(
+  `
+  INSERT INTO pm_task_requirement_instances (
+    pm_task_instance_id,
+    pm_task_requirement_id,
+    completed,
+    has_exception
+  )
+  SELECT
+    pti.pm_task_instance_id,
+    r.pm_task_requirement_id,
+    false,
+    false
+  FROM pm_task_instances pti
+  JOIN pm_task_requirements r
+    ON r.pm_task_template_id = pti.pm_task_template_id
+  WHERE
+    pti.pm_instance_id = $1
+  `,
+  [pmInstanceId]
+);
+  
+      actionTaken = `PM ${pmInstanceId}, WO ${woResult.rows[0].woid} created`;
           }
         }
 
