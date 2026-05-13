@@ -106,6 +106,44 @@ if (req.method === 'GET' && action === 'adminLoad') {
     return res.status(500).json({ error: 'Failed to load PM admin data' });
   }
 }
+    /* ------------------------------------------
+   ADD PM TEMPLATE
+------------------------------------------ */
+if (req.method === "POST" && action === "addTemplate") {
+  const {
+    asset_id,
+    pm_engine_type,
+    description
+  } = req.body;
+
+  try {
+    const result = await pool.query(
+      `
+      INSERT INTO pm_templates (
+        asset_id,
+        pm_engine_type,
+        description,
+        active,
+        created_at
+      )
+      VALUES ($1, $2, $3, true, NOW())
+      RETURNING pm_template_id
+      `,
+      [asset_id, pm_engine_type, description]
+    );
+
+    return res.status(200).json({
+      success: true,
+      pm_template_id: result.rows[0].pm_template_id
+    });
+
+  } catch (err) {
+    console.error("Add template error:", err);
+    return res.status(500).json({
+      error: "Failed to create PM template"
+    });
+  }
+}
 
     /* ================================
    ADMIN: TEMPLATE HEALTH CHECK
@@ -749,42 +787,5 @@ await pool.query(
     return res.status(500).json({ error: "PM engine failed" });
   }
 }
-/* ------------------------------------------
-   ADD PM TEMPLATE
------------------------------------------- */
-if (req.method === "POST" && action === "addTemplate") {
-  const {
-    asset_id,
-    pm_engine_type,
-    description
-  } = req.body;
 
-  try {
-    const result = await pool.query(
-      `
-      INSERT INTO pm_templates (
-        asset_id,
-        pm_engine_type,
-        description,
-        active,
-        created_at
-      )
-      VALUES ($1, $2, $3, true, NOW())
-      RETURNING pm_template_id
-      `,
-      [asset_id, pm_engine_type, description]
-    );
-
-    return res.status(200).json({
-      success: true,
-      pm_template_id: result.rows[0].pm_template_id
-    });
-
-  } catch (err) {
-    console.error("Add template error:", err);
-    return res.status(500).json({
-      error: "Failed to create PM template"
-    });
-  }
-}
 
