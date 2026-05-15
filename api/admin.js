@@ -121,27 +121,14 @@ export default async function handler(req, res) {
      // =========================
     // ✅ EDIT USER
     // =========================
-  window.editUser = async function (username) {
+if (action === "updateRole") {
+  const { username, role } = req.body;
 
-  const newRole = prompt("Enter new role (tech, manager, supervisor, admin):");
+  await pool.query(
+    `UPDATE users SET role = $1 WHERE username = $2`,
+    [role, username]
+  );
 
-  if (!newRole) return;
-
-  const res = await fetch(`${API_BASE}/api/admin`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "updateRole",
-      username,
-      role: newRole
-    })
-  });
-
-  if (!res.ok) {
-    alert("Failed to update role");
-    return;
-  }
-
-  loadUsers();
-};
+  return res.status(200).json({ success: true });
+}
 }
