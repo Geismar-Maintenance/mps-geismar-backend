@@ -801,7 +801,16 @@ if (req.method === "GET" && action === "previewTemplate") {
         ON tr.pm_task_tier_id = t.pm_task_tier_id
       WHERE t.pm_template_id = $1
         AND t.active = true
-      ORDER BY tr.tier_order, t.sequence_order
+     
+ORDER BY 
+  tr.tier_order,
+  CASE 
+    WHEN t.discipline = 'mechanical' THEN 1
+    WHEN t.discipline = 'electrical' THEN 2
+    ELSE 3
+  END,
+  t.sequence_order
+
     `, [templateId]);
 
     const requirements = await pool.query(`
