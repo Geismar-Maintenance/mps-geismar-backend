@@ -118,4 +118,30 @@ export default async function handler(req, res) {
     console.error(err);
     return res.status(500).json({ error: "Server error" });
   }
+     // =========================
+    // ✅ EDIT USER
+    // =========================
+  window.editUser = async function (username) {
+
+  const newRole = prompt("Enter new role (tech, manager, supervisor, admin):");
+
+  if (!newRole) return;
+
+  const res = await fetch(`${API_BASE}/api/admin`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "updateRole",
+      username,
+      role: newRole
+    })
+  });
+
+  if (!res.ok) {
+    alert("Failed to update role");
+    return;
+  }
+
+  loadUsers();
+};
 }
