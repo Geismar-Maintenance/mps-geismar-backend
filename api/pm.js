@@ -780,6 +780,60 @@ await pool.query(
       });
     }
 
+    /* ------------------------------------------
+   PREVIEW TEMPLATE (NO INSTANCE CREATION)
+------------------------------------------ */
+if (req.method === "GET" && action === "previewTemplate") {
+  const templateId = Number(req.query.templateId);
+
+  try {
+
+    const tasks = await pool.query(`
+      SELECT
+        t.pm_task_template_id,
+        t.task_description,
+        t.discipline,
+        t.sequence_order,
+        tr.tier_name,
+        tr.tier_order
+      FROM pm_task_templates t
+      JOIN pm_task_tiers tr
+        ON tr.pm_task_tier_id = t.pm_task_tier_id
+      WHERE t.pm_template_id = $1
+        AND t.active = true
+      ORDER BY tr.tier_order, t.sequence_order
+    `, [templateId]);
+
+    const requirements = await pool.query(`
+      SELECT
+        pm_task_requirement_id,
+        pm_task_template_id,
+        requirement_name,
+        sequence_order,
+        requires_reading
+      FROM pm_task_requirements
+      WHERE pm_task_template_id IN (
+        SELECT pm_task_template_id
+        FROM pm_task_templates
+        WHERE pm_template_id = $1
+      )
+      ORDER BY sequence_order
+    `, [templateId]);
+
+    return res.status(200).json({
+      tasks: tasks.rows,
+      requirements: requirements.rows
+    });
+
+  } catch (err) {
+    console.error("Preview error:", err);
+    return res.status(500).json({
+      error: "Failed to load preview"
+    });
+  }
+}
+  
+
     return res.status(405).json({ error: "Method not allowed" });
 
   } catch (err) {
