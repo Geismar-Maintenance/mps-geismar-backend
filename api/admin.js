@@ -64,3 +64,37 @@ if (!user) {
     return res.status(500).json({ error: "Server error" });
   }
 }
+
+if (req.method === "GET") {
+  const result = await pool.query(`
+    SELECT username, display_name, role, active
+    FROM users
+    ORDER BY display_name
+  `);
+
+  return res.status(200).json(result.rows);
+}
+
+if (action === "createUser") {
+  const { username, display_name, pin, role } = req.body;
+
+  await pool.query(
+    `INSERT INTO users (username, display_name, pin_hash, role, active)
+     VALUES ($1, $2 crypt($3, gen_salt('bf')), $4, true)`,
+    [username, display_name, pin, role || "user"]
+  );
+
+  return res.status(200).json({ success: true });
+}
+
+if (action === "toggleUser") {
+  const { username, active } = req.body;
+
+  await pool.query(
+    `UPDATE users SET active = $1 WHERE username = $2`,
+    [active, username]
+  );
+
+  return res.status(200).json({ success: true });
+}
+
