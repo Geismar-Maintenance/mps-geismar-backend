@@ -55,7 +55,7 @@ async function pmInstanceExists(templateId, blockId) {
 }
 
 /* ======================================================
-   MAIN HANDLER
+   MAIN HANDLER (ROUTER)
    ====================================================== */
 
 export default async function handler(req, res) {
@@ -71,11 +71,97 @@ export default async function handler(req, res) {
     const url = new URL(req.url, "http://localhost");
     const action = url.searchParams.get("action");
 
+    /* ===========================
+       ADMIN
+       =========================== */
+
+    if (req.method === "GET" && action === "adminLoad")
+      return handleAdminLoad(req, res);
+
+    if (req.method === "POST" && action === "addTemplate")
+      return handleAddTemplate(req, res);
+
+    if (req.method === "GET" && action === "templateHealth")
+      return handleTemplateHealth(req, res);
+
+    if (req.method === "GET" && action === "getBlocks")
+      return handleGetBlocks(req, res);
+
+    if (req.method === "POST" && action === "addBlock")
+      return handleAddBlock(req, res);
+
+    if (req.method === "POST" && action === "removeBlock")
+      return handleRemoveBlock(req, res);
+
+    if (req.method === "GET" && action === "getTaskTiers")
+      return handleGetTaskTiers(req, res);
+
+    if (req.method === "POST" && action === "addTaskTier")
+      return handleAddTaskTier(req, res);
+
+    if (req.method === "POST" && action === "removeTaskTier")
+      return handleRemoveTaskTier(req, res);
+
+    if (req.method === "GET" && action === "getTasks")
+      return handleGetTasks(req, res);
+
+    if (req.method === "POST" && action === "addTask")
+      return handleAddTask(req, res);
+
+    if (req.method === "GET" && action === "getTaskRequirements")
+      return handleGetTaskRequirements(req, res);
+
+    if (req.method === "POST" && action === "addTaskRequirement")
+      return handleAddTaskRequirement(req, res);
+
+    if (req.method === "POST" && action === "removeTaskRequirement")
+      return handleRemoveTaskRequirement(req, res);
+
+    /* ===========================
+       STATUS
+       =========================== */
+
+    if (req.method === "GET" && action === "status")
+      return handleStatus(req, res);
+
+    /* ===========================
+       ENGINE
+       =========================== */
+
+    if (req.method === "POST" && action === "run")
+      return handleEngineRun(req, res);
+
+    /* ===========================
+       REPORTS (NEW)
+       =========================== */
+
+    if (req.method === "GET" && action === "visualBoard")
+      return handleVisualBoard(req, res);
+
+    /* ===========================
+       PREVIEW
+       =========================== */
+
+    if (req.method === "GET" && action === "previewTemplate")
+      return handlePreviewTemplate(req, res);
+
+    /* ===========================
+       FALLBACK
+       =========================== */
+
+    return res.status(400).json({ error: "Invalid action" });
+
+  } catch (err) {
+    console.error("PM HANDLER ERROR:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+}
        /* ------------------------------------------
            Get PM Templates
            ------------------------------------------ */
-if (req.method === 'GET' && action === 'adminLoad') {
+async function handleAdminLoad(req, res) {
   try {
+
     const templates = await pool.query(`
       SELECT
         pt.pm_template_id,
@@ -102,14 +188,16 @@ if (req.method === 'GET' && action === 'adminLoad') {
     });
 
   } catch (err) {
-    console.error('PM adminLoad error:', err);
-    return res.status(500).json({ error: 'Failed to load PM admin data' });
+    console.error("PM adminLoad error:", err);
+    return res.status(500).json({
+      error: "Failed to load PM admin data"
+    });
   }
 }
     /* ------------------------------------------
    ADD PM TEMPLATE
 ------------------------------------------ */
-if (req.method === "POST" && action === "addTemplate") {
+async function handleAddTemplate(req, res) {
   const {
     asset_id,
     pm_engine_type,
@@ -148,7 +236,7 @@ if (req.method === "POST" && action === "addTemplate") {
     /* ================================
    ADMIN: TEMPLATE HEALTH CHECK
    ================================ */
-if (req.method === "GET" && action === "templateHealth") {
+async function handleTemplateHealth(req, res) {
   const templateId = Number(req.query.templateId);
   const warnings = [];
 
@@ -181,7 +269,7 @@ if (req.method === "GET" && action === "templateHealth") {
    GET /api/pm?action=status
    READ-ONLY PM STATUS (NO ENGINE LOGIC)
    ====================================================== */
-if (req.method === "GET" && action === "status") {
+async function handleStatus(req, res) {
   try {
     const result = await pool.query(`
       SELECT
@@ -221,7 +309,12 @@ if (req.method === "GET" && action === "status") {
     });
   }
 }
-    if (req.method === "GET" && action === "getBlocks") {
+
+/* ======================================================
+   BLOCKS
+   ====================================================== */
+  
+async function handleGetBlocks(req, res) {
   const templateId = Number(req.query.templateId);
 
   const blocks = await pool.query(`
@@ -237,7 +330,7 @@ if (req.method === "GET" && action === "status") {
   return res.status(200).json({ blocks: blocks.rows });
 }
 
-    if (req.method === "POST" && action === "addBlock") {
+   async function handleAddBlock(req, res) {
   const { pm_template_id, block_hours, sequence_order } = req.body;
 
   await pool.query(
@@ -252,7 +345,7 @@ if (req.method === "GET" && action === "status") {
   return res.status(200).json({ success: true });
 }
 
- if (req.method === "POST" && action === "removeBlock") {
+ async function handleRemoveBlock(req, res) {
   const { pm_block_id } = req.body;
 
   const exists = await pool.query(`
@@ -275,7 +368,12 @@ if (req.method === "GET" && action === "status") {
   return res.status(200).json({ success: true });
 }   
 
-    if (req.method === "GET" && action === "getTaskTiers") {
+
+/* ======================================================
+   TASK TIERS
+   ====================================================== */
+
+async function handleGetTaskTiers(req, res) {
   const tiers = await pool.query(`
     SELECT
       pm_task_tier_id,
@@ -288,7 +386,7 @@ if (req.method === "GET" && action === "status") {
   return res.status(200).json({ tiers: tiers.rows });
 }
 
-if (req.method === "POST" && action === "addTaskTier") {
+async function handleAddTaskTier(req, res) {
   const { pm_template_id, tier_name, tier_order } = req.body;
 
   await pool.query(
@@ -304,7 +402,7 @@ if (req.method === "POST" && action === "addTaskTier") {
 
   return res.status(200).json({ success: true });
 }
-    if (req.method === "POST" && action === "removeTaskTier") {
+async function handleRemoveTaskTier(req, res) {
   const { pm_task_tier_id } = req.body;
 
   const used = await pool.query(
@@ -331,7 +429,11 @@ if (req.method === "POST" && action === "addTaskTier") {
   return res.status(200).json({ success: true });
 }
 
-    if (req.method === "GET" && action === "getTasks") {
+
+/* ======================================================
+   TASKS
+   ====================================================== */
+async function handleGetTasks(req, res) {
   const templateId = Number(req.query.templateId);
 
   const tasks = await pool.query(`
@@ -351,7 +453,7 @@ if (req.method === "POST" && action === "addTaskTier") {
   return res.status(200).json({ tasks: tasks.rows });
 }
 
-    if (req.method === "POST" && action === "addTask") {
+async function handleAddTask(req, res) {
   const {
     pm_template_id,
     pm_task_tier_id,
@@ -381,7 +483,11 @@ if (req.method === "POST" && action === "addTaskTier") {
   return res.status(200).json({ success: true });
 }
 
-    if (req.method === "GET" && action === "getTaskRequirements") {
+
+/* ======================================================
+   TASK REQUIREMENTS
+   ====================================================== */
+async function handleGetTaskRequirements(req, res) {
   const taskId = Number(req.query.taskId);
 
   const result = await pool.query(
@@ -400,7 +506,7 @@ if (req.method === "POST" && action === "addTaskTier") {
 
   return res.status(200).json({ requirements: result.rows });
 }
-    if (req.method === "POST" && action === "addTaskRequirement") {
+async function handleAddTaskRequirement(req, res) {
   const {
     pm_task_template_id,
     requirement_name,
@@ -428,7 +534,7 @@ if (req.method === "POST" && action === "addTaskTier") {
 
   return res.status(200).json({ success: true });
 }
-  if (req.method === "POST" && action === "removeTaskRequirement") {
+async function handleRemoveTaskRequirement(req, res) {
   const { pm_task_requirement_id } = req.body;
 
   await pool.query(
@@ -445,7 +551,7 @@ if (req.method === "POST" && action === "addTaskTier") {
     /* ======================================================
        POST /api/pm?action=run
        ====================================================== */
-    if (req.method === "POST" && action === "run") {
+async function handleEngineRun(req, res) {
       const today = getLocalToday();
 
       const assetsResult = await pool.query(`
@@ -783,7 +889,7 @@ await pool.query(
     /* ------------------------------------------
    PREVIEW TEMPLATE (NO INSTANCE CREATION)
 ------------------------------------------ */
-if (req.method === "GET" && action === "previewTemplate") {
+async function handlePreviewTemplate(req, res) {
   const templateId = Number(req.query.templateId);
 
   try {
@@ -843,12 +949,5 @@ ORDER BY
 }
   
 
-    return res.status(405).json({ error: "Method not allowed" });
-
-  } catch (err) {
-    console.error("PM ENGINE ERROR:", err);
-    return res.status(500).json({ error: "PM engine failed" });
-  }
-}
 
 
