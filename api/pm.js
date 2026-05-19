@@ -80,6 +80,21 @@ export default async function handler(req, res) {
 
     if (req.method === "POST" && action === "addTemplate")
       return handleAddTemplate(req, res);
+    
+    if (req.method === "GET" && action === "getTriggers")
+      return handleGetTriggers(req, res);
+    
+    if (req.method === "GET" && action === "getTemplateTriggers")
+      return handleGetTemplateTriggers(req, res);
+
+    if (req.method === "POST" && action === "createTrigger")
+      return handleCreateTrigger(req, res);
+
+    if (req.method === "POST" && action === "linkTriggerTemplate")
+      return handleLinkTriggerTemplate(req, res);
+
+    if (req.method === "POST" && action === "unlinkTriggerTemplate")
+      return handleUnlinkTriggerTemplate(req, res);
 
     if (req.method === "GET" && action === "templateHealth")
       return handleTemplateHealth(req, res);
@@ -242,7 +257,11 @@ async function handleTemplateHealth(req, res) {
 
   try {
     const blocks = await pool.query(
-      `SELECT 1 FROM pm_blocks WHERE pm_template_id = $1 LIMIT 1`,
+     
+SELECT 1
+FROM trigger_block_templates
+WHERE pm_template_id = $1
+ LIMIT 1`,
       [templateId]
     );
     if (blocks.rowCount === 0) {
@@ -314,6 +333,42 @@ async function handleStatus(req, res) {
    BLOCKS
    ====================================================== */
   
+async function handleGetTemplateTriggers(req, res) {
+  const templateId = Number(req.query.templateId);
+
+  if (!templateId) {
+    return res.status(400).json({
+      error: "Template ID is required"
+    });
+  }
+
+  try {
+    const result = await pool.query(`
+      SELECT
+        tb.trigger_block_id,
+        tb.name,
+        tb.trigger_type,
+        tb.interval_value,
+        tb.sequence_order,
+        tb.max_tier_order
+      FROM trigger_block_templates tbt
+      JOIN trigger_blocks tb
+        ON tb.trigger_block_id = tbt.trigger_block_id
+      WHERE tbt.pm_template_id = $1
+      ORDER BY tb.interval_value
+    `, [templateId]);
+
+    return res.status(200).json({
+      triggers: result.rows
+    });
+
+  } catch (err) {
+    console.error("Get template triggers error:", err);
+    return res.status(500).json({
+      error: "Failed to load template triggers"
+    });
+  }
+}
 async function handleGetBlocks(req, res) {
   const templateId = Number(req.query.templateId);
 
@@ -944,6 +999,130 @@ ORDER BY
     console.error("Preview error:", err);
     return res.status(500).json({
       error: "Failed to load preview"
+    });
+  }
+}
+async function handleGetTriggers(req, res) {
+  try {
+    const result = await pool.query(`
+      SELECT
+        trigger_block_id,
+        name,
+        trigger_type,
+        interval_value,
+        sequence_order,
+        max_tier_order
+      FROM trigger_blocks
+      ORDER BY interval_value
+    `);
+
+    return res.status(200).json({
+      triggers: result.rows
+    });
+
+  } catch (err) {
+    console.error("Get triggers error:", err);
+    return res.status(500).json({
+      error: "Failed to load triggers"
+    });
+  }
+}
+async function handleCreateTrigger(req, res) {
+  const {
+    name,
+    trigger_type,
+    interval_value,
+    sequence_order,
+    max_tier_order
+  } = req.body;
+
+  if (!name || !interval_value || !sequence_order) {
+    return res.status(400).json({
+      error: "Missing required fields"
+    });
+  }
+
+  try {
+    const result = await pool.query(`
+      INSERT INTO trigger_blocks (
+        name,
+        trigger_type,
+        interval_value,
+        sequence_order,
+        max_tier_order
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING trigger_block_id
+    `, [
+      name,
+      trigger_type || "runtime",
+      interval_value,
+      sequence_order,
+      max_tier_order || 1
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      trigger_block_id: result.rows[0].trigger_block_id
+    });
+
+  } catch (err) {
+    console.error("Create trigger error:", err);
+    return res.status(500).json({
+      error: "Failed to create trigger"
+    });
+  }
+}
+async function handleLinkTriggerTemplate(req, res) {
+  const { trigger_block_id, pm_template_id } = req.body;
+
+  if (!trigger_block_id || !pm_template_id) {
+    return res.status(400).json({
+      error: "Missing trigger or template ID"
+    });
+  }
+
+  try {
+    await pool.query(`
+      INSERT INTO trigger_block_templates (
+        trigger_block_id,
+        pm_template_id
+      )
+      VALUES ($1, $2)
+      ON CONFLICT DO NOTHING
+    `, [trigger_block_id, pm_template_id]);
+
+    return res.status(200).json({ success: true });
+
+  } catch (err) {
+    console.error("Link trigger error:", err);
+    return res.status(500).json({
+      error: "Failed to link trigger"
+    });
+  }
+}
+async function handleUnlinkTriggerTemplate(req, res) {
+  const { trigger_block_id, pm_template_id } = req.body;
+
+  if (!trigger_block_id || !pm_template_id) {
+    return res.status(400).json({
+      error: "Missing trigger or template ID"
+    });
+  }
+
+  try {
+    await pool.query(`
+      DELETE FROM trigger_block_templates
+      WHERE trigger_block_id = $1
+        AND pm_template_id = $2
+    `, [trigger_block_id, pm_template_id]);
+
+    return res.status(200).json({ success: true });
+
+  } catch (err) {
+    console.error("Unlink trigger error:", err);
+    return res.status(500).json({
+      error: "Failed to unlink trigger"
     });
   }
 }
