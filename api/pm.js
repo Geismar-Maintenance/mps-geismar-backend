@@ -40,7 +40,7 @@ function getDueFriday(date) {
    Helper: check PM instance existence
    ====================================================== */
 
-async function pmInstanceExists(templateId, blockId) {
+async function pmInstanceExists(templateId, triggerValue) {
   const res = await pool.query(
     `
     SELECT 1
@@ -49,7 +49,7 @@ async function pmInstanceExists(templateId, blockId) {
       AND trigger_value = $2
       AND status = 'active'
     `,
-    [templateId, blockId]
+    [templateId, triggerValue]
   );
   return res.rowCount > 0;
 }
@@ -247,8 +247,7 @@ async function handleTemplateHealth(req, res) {
   const warnings = [];
 
   try {
-    const blocks = await pool.query(
-     
+    const blocks = await pool.query(`     
 SELECT 1
 FROM trigger_block_templates
 WHERE pm_template_id = $1
