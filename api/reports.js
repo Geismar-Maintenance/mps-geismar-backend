@@ -21,7 +21,41 @@ export default async function handler(req, res) {
   try {
 
     const { type, cabinet, section } = req.query;
+// ===============================
+// ✅ PARTS USAGE (DATE RANGE)
+// ===============================
+if (type === "parts-usage") {
 
+  const { startDate, endDate } = req.query;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({
+      error: "startDate and endDate required"
+    });
+  }
+
+  const result = await pool.query(`
+    SELECT
+      p.partid,
+      p.partnumber,
+      p.description,
+      SUM(t.quantity) AS total_used
+    FROM transactions t
+    JOIN masterparts p ON p.partid = t.partid
+    WHERE
+      t.transaction_type = 'issue'
+      AND t.created_at BETWEEN $1 AND $2
+    GROUP BY
+      p.partid,
+      p.partnumber,
+      p.description
+    ORDER BY total_used DESC;
+  `, [startDate, endDate]);
+
+  return res.status(200).json(result.rows);
+}
+
+    
     // ===============================
     // ✅ INVENTORY SECTION REPORT
     // ===============================
