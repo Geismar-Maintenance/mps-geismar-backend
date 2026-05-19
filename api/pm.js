@@ -46,7 +46,7 @@ async function pmInstanceExists(templateId, blockId) {
     SELECT 1
     FROM pm_instances
     WHERE pm_template_id = $1
-      AND pm_block_id = $2
+      AND trigger_value = $2
       AND status = 'active'
     `,
     [templateId, blockId]
@@ -98,15 +98,6 @@ export default async function handler(req, res) {
 
     if (req.method === "GET" && action === "templateHealth")
       return handleTemplateHealth(req, res);
-
-    if (req.method === "GET" && action === "getBlocks")
-      return handleGetBlocks(req, res);
-
-    if (req.method === "POST" && action === "addBlock")
-      return handleAddBlock(req, res);
-
-    if (req.method === "POST" && action === "removeBlock")
-      return handleRemoveBlock(req, res);
 
     if (req.method === "GET" && action === "getTaskTiers")
       return handleGetTaskTiers(req, res);
@@ -295,7 +286,7 @@ async function handleStatus(req, res) {
         pi.pm_instance_id,
         pi.asset_id,
         a.assetname AS asset_name,
-        pb.block_hours AS pm_block_hours,
+        tb.interval_value AS trigger_value,
         pi.status,
         pi.execution_allowed,
         pi.completion_percentage,
@@ -311,11 +302,12 @@ async function handleStatus(req, res) {
       FROM pm_instances pi
       JOIN assets a
         ON a.assetid = pi.asset_id
-      JOIN pm_blocks pb
-        ON pb.pm_block_id = pi.pm_block_id
+      JOIN trigger_blocks tb
+      ON tb.interval_value = pi.trigger_value
+
       ORDER BY
         pi.status,
-        pb.block_hours,
+        tb.interval_value,
         a.assetname;
     `);
 
@@ -369,61 +361,6 @@ async function handleGetTemplateTriggers(req, res) {
     });
   }
 }
-async function handleGetBlocks(req, res) {
-  const templateId = Number(req.query.templateId);
-
-  const blocks = await pool.query(`
-    SELECT
-      pm_block_id,
-      block_hours,
-      sequence_order
-    FROM pm_blocks
-    WHERE pm_template_id = $1
-    ORDER BY sequence_order
-  `, [templateId]);
-
-  return res.status(200).json({ blocks: blocks.rows });
-}
-
-   async function handleAddBlock(req, res) {
-  const { pm_template_id, block_hours, sequence_order } = req.body;
-
-  await pool.query(
-    `
-    INSERT INTO pm_blocks
-      (pm_template_id, block_hours, sequence_order)
-    VALUES ($1, $2, $3)
-    `,
-    [pm_template_id, block_hours, sequence_order]
-  );
-
-  return res.status(200).json({ success: true });
-}
-
- async function handleRemoveBlock(req, res) {
-  const { pm_block_id } = req.body;
-
-  const exists = await pool.query(`
-    SELECT 1 FROM pm_instances
-    WHERE pm_block_id = $1
-      AND status = 'active'
-  `, [pm_block_id]);
-
-  if (exists.rowCount > 0) {
-    return res.status(409).json({
-      error: "Cannot remove block with active PM instances"
-    });
-  }
-
-  await pool.query(
-    `DELETE FROM pm_blocks WHERE pm_block_id = $1`,
-    [pm_block_id]
-  );
-
-  return res.status(200).json({ success: true });
-}   
-
-
 /* ======================================================
    TASK TIERS
    ====================================================== */
@@ -603,343 +540,379 @@ async function handleRemoveTaskRequirement(req, res) {
   return res.status(200).json({ success: true });
 }  
         
-    /* ======================================================
-       POST /api/pm?action=run
-       ====================================================== */
+/* ======================================================
+   POST /api/pm?action=run
+   ====================================================== */
 async function handleEngineRun(req, res) {
-      const today = getLocalToday();
+  const today = getLocalToday();
 
-      const assetsResult = await pool.query(`
-        SELECT
-          a.assetid,
-          a.runtime_hours,
-          pt.pm_template_id
-        FROM assets a
-        JOIN pm_templates pt
-          ON pt.asset_id = a.assetid
-        WHERE
-          a.asset_class = 'manufacturing'
-          AND pt.pm_engine_type = 'cyclical'
-          AND pt.active = true
-      `);
+  const assetsResult = await pool.query(`
+    SELECT
+      a.assetid,
+      a.runtime_hours
+    FROM assets a
+    WHERE a.asset_class = 'manufacturing'
+  `);
 
-      const evaluations = [];
+  const triggerResult = await pool.query(`
+    SELECT
+      trigger_block_id,
+      trigger_type,
+      interval_value,
+      sequence_order,
+      max_tier_order
+    FROM trigger_blocks
+    ORDER BY sequence_order
+  `);
 
-      for (const asset of assetsResult.rows) {
+  const evaluations = [];
 
-        /* ------------------------------------------
-           Load PM blocks
-           ------------------------------------------ */
-        const blocksResult = await pool.query(
+  for (const asset of assetsResult.rows) {
+
+    if (triggerResult.rowCount === 0) {
+      evaluations.push({
+        assetid: asset.assetid,
+        warning: "No trigger blocks defined"
+      });
+      continue;
+    }
+
+    /* ------------------------------------------
+       Determine current trigger
+    ------------------------------------------ */
+    const runtime = Number(asset.runtime_hours);
+    let currentTrigger = null;
+
+    for (const trigger of triggerResult.rows) {
+      if (trigger.trigger_type === "runtime") {
+        if (runtime < trigger.interval_value) {
+          currentTrigger = trigger;
+          break;
+        }
+      }
+    }
+
+    if (!currentTrigger) {
+      currentTrigger = triggerResult.rows[0];
+    }
+
+    const maxTierOrder = currentTrigger.max_tier_order;
+
+    /* ------------------------------------------
+       Get templates for this trigger + asset
+    ------------------------------------------ */
+    const templates = await pool.query(`
+      SELECT pt.*
+      FROM trigger_block_templates tbt
+      JOIN pm_templates pt
+        ON pt.pm_template_id = tbt.pm_template_id
+      WHERE tbt.trigger_block_id = $1
+        AND pt.asset_id = $2
+        AND pt.active = true
+    `, [currentTrigger.trigger_block_id, asset.assetid]);
+
+    if (templates.rowCount === 0) continue;
+
+    /* ------------------------------------------
+       Forecast due dates
+    ------------------------------------------ */
+    const AVG_HOURS_PER_WEEK = 100;
+    const hoursRemaining = currentTrigger.interval_value - runtime;
+    const weeksToDue = hoursRemaining / AVG_HOURS_PER_WEEK;
+
+    const estimatedDueDate = addDays(
+      today,
+      Math.round(weeksToDue * 7)
+    );
+
+    const dueFriday = getDueFriday(estimatedDueDate);
+    const generationDate = addDays(dueFriday, -21);
+    const executionStart = addDays(dueFriday, -11);
+    const executionEnd = addDays(dueFriday, 9);
+
+    let phase = "planning";
+
+    if (today >= executionStart && today <= executionEnd) {
+      phase = "execution";
+    } else if (today > executionEnd) {
+      phase = "auto-complete";
+    }
+
+    const executionAllowed =
+      today >= executionStart && today <= executionEnd;
+
+    /* ------------------------------------------
+       Loop templates (NEW CORE STRUCTURE)
+    ------------------------------------------ */
+    for (const template of templates.rows) {
+
+      /* ------------------------------------------
+         Update execution window
+      ------------------------------------------ */
+      await pool.query(
+        `
+        UPDATE pm_instances
+        SET execution_allowed = $1
+        WHERE pm_template_id = $2
+          AND trigger_value = $3
+          AND status = 'active'
+        `,
+        [
+          executionAllowed,
+          template.pm_template_id,
+          currentTrigger.interval_value
+        ]
+      );
+
+      /* ------------------------------------------
+         Check existence
+      ------------------------------------------ */
+      const exists = await pool.query(
+        `
+        SELECT 1
+        FROM pm_instances
+        WHERE pm_template_id = $1
+          AND trigger_value = $2
+          AND status = 'active'
+        LIMIT 1
+        `,
+        [
+          template.pm_template_id,
+          currentTrigger.interval_value
+        ]
+      );
+
+      let actionTaken = null;
+
+      /* ------------------------------------------
+         Create PM
+      ------------------------------------------ */
+      if (phase === "planning" && today >= generationDate && exists.rowCount === 0) {
+
+        const pmInstanceResult = await pool.query(
           `
-          SELECT
+          INSERT INTO pm_instances (
+            pm_template_id,
+            asset_id,
             pm_block_id,
-            block_hours,
-            sequence_order,
-            max_tier_order
-          FROM pm_blocks
-          WHERE pm_template_id = $1
-          ORDER BY sequence_order
-          `,
-          [asset.pm_template_id]
-        );
-
-        if (blocksResult.rowCount === 0) {
-          evaluations.push({
-            assetid: asset.assetid,
-            warning: "No PM blocks defined"
-          });
-          continue;
-        }
-
-        /* ------------------------------------------
-           Determine current PM block
-           ------------------------------------------ */
-        const runtime = Number(asset.runtime_hours);
-        let currentBlock = null;
-
-        for (const block of blocksResult.rows) {
-          if (runtime < block.block_hours) {
-            currentBlock = block;
-            break;
-          }
-        }
-
-        if (!currentBlock) {
-          currentBlock = blocksResult.rows[0]; // wrap after 8000
-        }
-        const maxTierOrder = currentBlock.max_tier_order;
-
-        /* ------------------------------------------
-           Forecast due dates
-           ------------------------------------------ */
-        const AVG_HOURS_PER_WEEK = 100;
-        const hoursRemaining = currentBlock.block_hours - runtime;
-        const weeksToDue = hoursRemaining / AVG_HOURS_PER_WEEK;
-
-        const estimatedDueDate = addDays(
-          today,
-          Math.round(weeksToDue * 7)
-        );
-
-        const dueFriday = getDueFriday(estimatedDueDate);
-        const generationDate = addDays(dueFriday, -21);
-        const executionStart = addDays(dueFriday, -11);
-        const executionEnd = addDays(dueFriday, 9);
-
-        /* ------------------------------------------
-           Phase classification
-           ------------------------------------------ */
-        let phase = "planning";
-
-        if (today >= executionStart && today <= executionEnd) {
-          phase = "execution";
-        } else if (today > executionEnd) {
-          phase = "auto-complete";
-        }
-
-        /* ------------------------------------------
-           PHASE 3: Execution window enforcement
-           ------------------------------------------ */
-        const executionAllowed =
-          today >= executionStart && today <= executionEnd;
-
-        await pool.query(
-          `
-          UPDATE pm_instances
-          SET execution_allowed = $1
-          WHERE pm_template_id = $2
-            AND pm_block_id = $3
-            AND status = 'active'
+            trigger_value,
+            status,
+            auto_completed,
+            execution_allowed,
+            created_at
+          )
+          VALUES ($1, $2, $3, $4, 'active', false, false, NOW())
+          RETURNING pm_instance_id
           `,
           [
-            executionAllowed,
-            asset.pm_template_id,
-            currentBlock.pm_block_id
+            template.pm_template_id,
+            asset.assetid,
+            currentTrigger.interval_value, // temporary mapping
+            currentTrigger.interval_value
+          ]
+        );
+
+        const pmInstanceId = pmInstanceResult.rows[0].pm_instance_id;
+
+        const woResult = await pool.query(
+          `
+          INSERT INTO workorders (
+            assetid,
+            description,
+            wotype,
+            priority,
+            duedate,
+            status,
+            pm_instance_id
+          )
+          VALUES ($1, $2, 1, 2, $3, 1, $4)
+          RETURNING woid
+          `,
+          [
+            asset.assetid,
+            `${currentTrigger.interval_value}-Hour Preventive Maintenance`,
+            dueFriday,
+            pmInstanceId
           ]
         );
 
         /* ------------------------------------------
-           PHASE 2: Create PM + WO (planning)
-           ------------------------------------------ */
-        let actionTaken = null;
+           Create task instances
+        ------------------------------------------ */
+        await pool.query(
+          `
+          INSERT INTO pm_task_instances (
+            pm_instance_id,
+            pm_task_template_id,
+            completed
+          )
+          SELECT
+            $1,
+            t.pm_task_template_id,
+            false
+          FROM pm_task_templates t
+          JOIN pm_task_tiers tier
+            ON tier.pm_task_tier_id = t.pm_task_tier_id
+          WHERE
+            t.pm_template_id = $2
+            AND tier.tier_order <= $3
+          `,
+          [
+            pmInstanceId,
+            template.pm_template_id,
+            maxTierOrder
+          ]
+        );
 
-        if (phase === "planning" && today >= generationDate) {
-          const exists = await pmInstanceExists(
-            asset.pm_template_id,
-            currentBlock.pm_block_id
-          );
+        await pool.query(
+          `
+          INSERT INTO pm_task_requirement_instances (
+            pm_task_instance_id,
+            pm_task_requirement_id,
+            completed,
+            has_exception
+          )
+          SELECT
+            pti.pm_task_instance_id,
+            r.pm_task_requirement_id,
+            false,
+            false
+          FROM pm_task_instances pti
+          JOIN pm_task_requirements r
+            ON r.pm_task_template_id = pti.pm_task_template_id
+          WHERE pti.pm_instance_id = $1
+          `,
+          [pmInstanceId]
+        );
 
-          if (!exists) {
-            const pmInstanceResult = await pool.query(
-              `
-              INSERT INTO pm_instances (
-                pm_template_id,
-                asset_id,
-                pm_block_id,
-                trigger_value,
-                status,
-                auto_completed,
-                execution_allowed,
-                created_at
-              )
-              VALUES ($1, $2, $3, $4, 'active', false, false, NOW())
-              RETURNING pm_instance_id
-              `,
-              [
-                asset.pm_template_id,
-                asset.assetid,
-                currentBlock.pm_block_id,
-                currentBlock.block_hours
-              ]
-            );
+        actionTaken = `PM ${pmInstanceId}, WO ${woResult.rows[0].woid} created`;
+      }
+/* ------------------------------------------
+   PHASE 4: Auto-completion (late PMs)
+------------------------------------------ */
+if (phase === "auto-complete") {
 
-            const pmInstanceId =
-              pmInstanceResult.rows[0].pm_instance_id;
-
-            const PM_TYPE_ID = 1;
-            const PM_PRIORITY_ID = 2;
-
-            const woResult = await pool.query(
-              `
-              INSERT INTO workorders (
-                assetid,
-                description,
-                wotype,
-                priority,
-                duedate,
-                status,
-                pm_instance_id
-              )
-              VALUES ($1, $2, $3, $4, $5, 1, $6)
-              RETURNING woid
-              `,
-              [
-                asset.assetid,
-                `${currentBlock.block_hours}-Hour Preventive Maintenance`,
-                PM_TYPE_ID,
-                PM_PRIORITY_ID,
-                dueFriday,
-                pmInstanceId
-              ]
-            );
-
-           
- await pool.query(
+  const alreadyCompleted = await pool.query(
     `
-    INSERT INTO pm_task_instances (
-      pm_instance_id,
-      pm_task_template_id,
-      completed
-    )
-    SELECT
-      $1,
-      t.pm_task_template_id,
-      false
-    FROM pm_task_templates t
-    JOIN pm_task_tiers tier
-      ON tier.pm_task_tier_id = t.pm_task_tier_id
-    WHERE
-      t.pm_template_id = $2
-      AND tier.tier_order <= $3
+    SELECT 1
+    FROM pm_instances
+    WHERE pm_template_id = $1
+      AND trigger_value = $2
+      AND status = 'completed'
     `,
     [
-      pmInstanceId,
-      asset.pm_template_id,
-      maxTierOrder   // ✅ THIS IS YOUR KEY VARIABLE
+      template.pm_template_id,
+      currentTrigger.interval_value
     ]
   );
 
-  
-await pool.query(
-  `
-  INSERT INTO pm_task_requirement_instances (
-    pm_task_instance_id,
-    pm_task_requirement_id,
-    completed,
-    has_exception
-  )
-  SELECT
-    pti.pm_task_instance_id,
-    r.pm_task_requirement_id,
-    false,
-    false
-  FROM pm_task_instances pti
-  JOIN pm_task_requirements r
-    ON r.pm_task_template_id = pti.pm_task_template_id
-  WHERE
-    pti.pm_instance_id = $1
-  `,
-  [pmInstanceId]
-);
-  
-      actionTaken = `PM ${pmInstanceId}, WO ${woResult.rows[0].woid} created`;
-          }
-        }
+  if (alreadyCompleted.rowCount === 0) {
 
-        /* ------------------------------------------
-           PHASE 4: Auto-completion (late PMs)
-           ------------------------------------------ */
-        if (phase === "auto-complete") {
-          const alreadyCompleted = await pool.query(
-            `
-            SELECT 1
-            FROM pm_instances
-            WHERE pm_template_id = $1
-              AND pm_block_id = $2
-              AND status = 'completed'
-            `,
-            [asset.pm_template_id, currentBlock.pm_block_id]
-          );
+    /* ------------------------------------------
+       Completion percentage
+    ------------------------------------------ */
+    const completionResult = await pool.query(
+      `
+      SELECT
+        COUNT(*) FILTER (WHERE pti.completed = true)::FLOAT
+        /
+        NULLIF(COUNT(*), 0) * 100 AS completion_percentage
+      FROM pm_task_instances pti
+      JOIN pm_instances pi
+        ON pi.pm_instance_id = pti.pm_instance_id
+      WHERE
+        pi.pm_template_id = $1
+        AND pi.trigger_value = $2
+        AND pi.status = 'active'
+      `,
+      [
+        template.pm_template_id,
+        currentTrigger.interval_value
+      ]
+    );
 
-          if (alreadyCompleted.rowCount === 0) {
+    const completionPercentage =
+      completionResult.rows[0].completion_percentage || 0;
 
-            const completionResult = await pool.query(
-              `
-              SELECT
-                COUNT(*) FILTER (WHERE pti.completed = true)::FLOAT
-                /
-                NULLIF(COUNT(*), 0) * 100 AS completion_percentage
-              FROM pm_task_instances pti
-              JOIN pm_instances pi
-                ON pi.pm_instance_id = pti.pm_instance_id
-              WHERE
-                pi.pm_template_id = $1
-                AND pi.pm_block_id = $2
-                AND pi.status = 'active'
-              `,
-              [asset.pm_template_id, currentBlock.pm_block_id]
-            );
+    /* ------------------------------------------
+       Exception check
+    ------------------------------------------ */
+    let hasExceptions = false;
 
-            const completionPercentage =
-              completionResult.rows[0].completion_percentage || 0;
+    try {
+      const ex = await pool.query(
+        `
+        SELECT COUNT(*) AS cnt
+        FROM pm_task_requirement_instances pri
+        JOIN pm_task_instances pti
+          ON pti.pm_task_instance_id = pri.pm_task_instance_id
+        JOIN pm_instances pi
+          ON pi.pm_instance_id = pti.pm_instance_id
+        WHERE
+          pi.pm_template_id = $1
+          AND pi.trigger_value = $2
+          AND pri.has_exception = true
+        `,
+        [
+          template.pm_template_id,
+          currentTrigger.interval_value
+        ]
+      );
 
-            let hasExceptions = false;
-            try {
-              const ex = await pool.query(
-                `
-                SELECT COUNT(*) AS cnt
-                FROM pm_task_requirement_instances pri
-                JOIN pm_task_instances pti
-                  ON pti.pm_task_instance_id = pri.pm_task_instance_id
-                JOIN pm_instances pi
-                  ON pi.pm_instance_id = pti.pm_instance_id
-                WHERE
-                  pi.pm_template_id = $1
-                  AND pi.pm_block_id = $2
-                  AND pri.has_exception = true
-                `,
-                [asset.pm_template_id, currentBlock.pm_block_id]
-              );
-              hasExceptions = Number(ex.rows[0].cnt) > 0;
-            } catch {}
-
-            await pool.query(
-              `
-              UPDATE pm_instances
-              SET
-                status = 'completed',
-                auto_completed = true,
-                completion_type = 'auto',
-                completed_at = $3,
-                completion_percentage = $4,
-                execution_allowed = false,
-                has_exceptions = $5
-              WHERE
-                pm_template_id = $1
-                AND pm_block_id = $2
-                AND status = 'active'
-              `,
-              [
-                asset.pm_template_id,
-                currentBlock.pm_block_id,
-                executionEnd,
-                completionPercentage,
-                hasExceptions
-              ]
-            );
-          }
-        }
-
-        evaluations.push({
-          assetid: asset.assetid,
-          pm_block_hours: currentBlock.block_hours,
-          runtime_hours: runtime,
-          due_friday: dueFriday.toISOString().slice(0, 10),
-          execution_start: executionStart.toISOString().slice(0, 10),
-          execution_end: executionEnd.toISOString().slice(0, 10),
-          phase,
-          action_taken: actionTaken
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        run_date: today.toISOString().slice(0, 10),
-        evaluated_assets: evaluations.length,
-        evaluations
-      });
+      hasExceptions = Number(ex.rows[0].cnt) > 0;
+    } catch (err) {
+      console.error("Exception check failed:", err);
     }
+
+    /* ------------------------------------------
+       Final update
+    ------------------------------------------ */
+    await pool.query(
+      `
+      UPDATE pm_instances
+      SET
+        status = 'completed',
+        auto_completed = true,
+        completion_type = 'auto',
+        completed_at = $3,
+        completion_percentage = $4,
+        execution_allowed = false,
+        has_exceptions = $5
+      WHERE
+        pm_template_id = $1
+        AND trigger_value = $2
+        AND status = 'active'
+      `,
+      [
+        template.pm_template_id,
+        currentTrigger.interval_value,
+        executionEnd,
+        completionPercentage,
+        hasExceptions
+      ]
+    );
+  }
+}
+
+      evaluations.push({
+        assetid: asset.assetid,
+        trigger_value: currentTrigger.interval_value,
+        runtime_hours: runtime,
+        due_friday: dueFriday.toISOString().slice(0, 10),
+        phase,
+        action_taken: actionTaken
+      });
+
+    }
+  }
+
+  return res.status(200).json({
+    success: true,
+    run_date: today.toISOString().slice(0, 10),
+    evaluated_assets: evaluations.length,
+    evaluations
+  });
+}
 
     /* ------------------------------------------
    PREVIEW TEMPLATE (NO INSTANCE CREATION)
