@@ -169,10 +169,6 @@ async function handleAdminLoad(req, res) {
   try {
 
     const templates = await pool.query(`
-     async function handleAdminLoad(req, res) {
-  try {
-
-    const templates = await pool.query(`
   SELECT
   pt.pm_template_id,
   pt.description,
