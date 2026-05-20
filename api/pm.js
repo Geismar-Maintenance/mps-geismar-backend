@@ -169,11 +169,17 @@ async function handleAdminLoad(req, res) {
   try {
 
     const templates = await pool.query(`
-      SELECT
-        pt.pm_template_id,
-        a.assetname,
-        pt.pm_engine_type,
-        pt.active
+     async function handleAdminLoad(req, res) {
+  try {
+
+    const templates = await pool.query(`
+  SELECT
+  pt.pm_template_id,
+  pt.description,
+  a.assetname,
+  pt.pm_engine_type,
+  pt.active
+
       FROM pm_templates pt
       JOIN assets a ON a.assetid = pt.asset_id
       ORDER BY a.assetname
@@ -200,6 +206,7 @@ async function handleAdminLoad(req, res) {
     });
   }
 }
+
     /* ------------------------------------------
    ADD PM TEMPLATE
 ------------------------------------------ */
