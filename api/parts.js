@@ -193,7 +193,8 @@ async function getInventoryFilter(res, type) {
         p.model,
         p.description,
         p.cost,
-        p.reorderlevel
+        p.reorderlevel,
+        p.is_active
     )
 
     SELECT *
