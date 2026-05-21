@@ -183,6 +183,7 @@ async function getInventoryFilter(res, type) {
         p.description,
         p.cost,
         p.reorderlevel,
+        p.is_active,
         COALESCE(SUM(pl.qty), 0)::int AS total_qty
       FROM masterparts p
       LEFT JOIN partlocations pl ON p.partid = pl.partid
