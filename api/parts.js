@@ -206,7 +206,7 @@ async function getInventoryFilter(res, type) {
         OR (
           $1 = 'low'
           AND reorderlevel > 0
-          AND is_active = true;
+          AND is_active = true
           AND total_qty > 0
           AND total_qty <= reorderlevel
         )
