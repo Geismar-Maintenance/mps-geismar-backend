@@ -139,6 +139,77 @@ if (type === "missing-runtime") {
     year: result.rows[0]?.year || null
   });
 }
+      // ===============================
+// ✅ DASHBOARD RUNTIME (NEW)
+// ===============================
+if (type === "dashboard-runtime") {
+
+  const result = await pool.query(`
+    WITH latest_weeks AS (
+      SELECT week_id
+      FROM calendar_weeks
+      ORDER BY week_id DESC
+      LIMIT 3
+    ),
+
+    runtime_agg AS (
+      SELECT
+        arl.asset_id,
+        SUM(CASE WHEN arl.week_id = (SELECT MAX(week_id) FROM latest_weeks)
+                 THEN arl.runtime_hours ELSE 0 END) AS weekly,
+
+        AVG(arl.runtime_hours) AS rolling_avg,
+
+        SUM(arl.runtime_hours) AS ytd
+
+      FROM asset_runtime_logs arl
+      WHERE arl.week_id IN (SELECT week_id FROM latest_weeks)
+      GROUP BY arl.asset_id
+    ),
+
+    runtime_totals AS (
+      SELECT
+        asset_id,
+        SUM(runtime_hours) AS total_runtime
+      FROM asset_runtime_logs
+      GROUP BY asset_id
+    ),
+
+    runtime_prev AS (
+      SELECT
+        arl.asset_id,
+        SUM(arl.runtime_hours) AS prev_runtime
+      FROM asset_runtime_logs arl
+      WHERE arl.week_id < (SELECT MAX(week_id) FROM latest_weeks)
+      GROUP BY arl.asset_id
+    )
+
+    SELECT
+      a.assetid,
+      a.assetname AS name,
+
+      COALESCE(r.weekly, 0) AS weekly,
+      ROUND(COALESCE(r.rolling_avg, 0), 1) AS rolling_avg,
+      COALESCE(r.ytd, 0) AS ytd,
+
+      COALESCE(t.total_runtime, 0) AS runtime,
+      COALESCE(p.prev_runtime, 0) AS prev_runtime
+
+    FROM assets a
+    LEFT JOIN runtime_agg r ON r.asset_id = a.assetid
+    LEFT JOIN runtime_totals t ON t.asset_id = a.assetid
+    LEFT JOIN runtime_prev p ON p.asset_id = a.assetid
+
+    WHERE a.isactive = true
+      AND a.asset_class = 'manufacturing'
+
+    ORDER BY a.assetname;
+  `);
+
+  return res.status(200).json({
+    assets: result.rows
+  });
+}
 
   } catch (err) {
     console.error("REPORT ERROR:", err);
@@ -147,4 +218,5 @@ if (type === "missing-runtime") {
       error: err.message || "Server error"
     });
   }
+
 }
