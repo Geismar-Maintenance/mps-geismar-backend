@@ -206,6 +206,7 @@ WHERE a.isactive = true
   AND a.asset_class = 'manufacturing'
 
 ORDER BY a.assetname;
+`);
 
   return res.status(200).json({
     assets: result.rows
@@ -214,7 +215,6 @@ ORDER BY a.assetname;
 
   } catch (err) {
     console.error("REPORT ERROR:", err);
-  `);
 
     return res.status(500).json({
       error: err.message || "Server error"
