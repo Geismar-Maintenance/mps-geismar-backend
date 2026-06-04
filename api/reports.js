@@ -214,6 +214,7 @@ ORDER BY a.assetname;
 
   } catch (err) {
     console.error("REPORT ERROR:", err);
+  `);
 
     return res.status(500).json({
       error: err.message || "Server error"
