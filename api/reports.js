@@ -145,66 +145,67 @@ if (type === "missing-runtime") {
 if (type === "dashboard-runtime") {
 
   const result = await pool.query(`
-    WITH latest_weeks AS (
-      SELECT week_id
-      FROM calendar_weeks
-      ORDER BY week_id DESC
-      LIMIT 3
-    ),
+   WITH latest_logged_week AS (
+  SELECT MAX(week_id) AS week_id
+  FROM asset_runtime_logs
+),
 
-    runtime_agg AS (
-      SELECT
-        arl.asset_id,
-        SUM(CASE WHEN arl.week_id = (SELECT MAX(week_id) FROM latest_weeks)
-                 THEN arl.runtime_hours ELSE 0 END) AS weekly,
+previous_weeks AS (
+  SELECT week_id
+  FROM calendar_weeks
+  WHERE week_id <= (SELECT week_id FROM latest_logged_week)
+  ORDER BY week_id DESC
+  LIMIT 3
+),
 
-        AVG(arl.runtime_hours) AS rolling_avg,
+runtime_agg AS (
+  SELECT
+    arl.asset_id,
 
-        SUM(arl.runtime_hours) AS ytd
+    -- ✅ MOST RECENT LOGGED WEEK (true "weekly")
+    SUM(CASE 
+        WHEN arl.week_id = (SELECT week_id FROM latest_logged_week)
+        THEN arl.runtime_hours ELSE 0
+    END) AS weekly,
 
-      FROM asset_runtime_logs arl
-      WHERE arl.week_id IN (SELECT week_id FROM latest_weeks)
-      GROUP BY arl.asset_id
-    ),
+    -- ✅ rolling average (last 3 logged weeks)
+    AVG(CASE 
+        WHEN arl.week_id IN (SELECT week_id FROM previous_weeks)
+        THEN arl.runtime_hours
+    END) AS rolling_avg
 
-    runtime_totals AS (
-      SELECT
-        asset_id,
-        SUM(runtime_hours) AS total_runtime
-      FROM asset_runtime_logs
-      GROUP BY asset_id
-    ),
+  FROM asset_runtime_logs arl
+  GROUP BY arl.asset_id
+)
 
-    runtime_prev AS (
-      SELECT
-        arl.asset_id,
-        SUM(arl.runtime_hours) AS prev_runtime
-      FROM asset_runtime_logs arl
-      WHERE arl.week_id < (SELECT MAX(week_id) FROM latest_weeks)
-      GROUP BY arl.asset_id
-    )
+SELECT
+  a.assetid,
+  a.assetname AS name,
 
-    SELECT
-      a.assetid,
-      a.assetname AS name,
+  -- ✅ weekly runtime (last entered week)
+  COALESCE(r.weekly, 0) AS weekly,
 
-      COALESCE(r.weekly, 0) AS weekly,
-      ROUND(COALESCE(r.rolling_avg, 0), 1) AS rolling_avg,
-      COALESCE(r.ytd, 0) AS ytd,
+  -- ✅ 3-week rolling avg
+  ROUND(COALESCE(r.rolling_avg, 0), 1) AS rolling_avg,
 
-      COALESCE(t.total_runtime, 0) AS runtime,
-      COALESCE(p.prev_runtime, 0) AS prev_runtime
+  -- ✅ cumulative runtime (true total)
+  a.total_runtime AS ytd,
 
-    FROM assets a
-    LEFT JOIN runtime_agg r ON r.asset_id = a.assetid
-    LEFT JOIN runtime_totals t ON t.asset_id = a.assetid
-    LEFT JOIN runtime_prev p ON p.asset_id = a.assetid
+  -- ✅ PM projection (example: every 500 hours)
+  CASE
+    WHEN r.rolling_avg > 0 THEN
+      ROUND((500 - (a.total_runtime % 500)) / r.rolling_avg, 1)
+    ELSE NULL
+  END AS weeks_to_pm
 
-    WHERE a.isactive = true
-      AND a.asset_class = 'manufacturing'
+FROM assets a
+LEFT JOIN runtime_agg r
+  ON r.asset_id = a.assetid
 
-    ORDER BY a.assetname;
-  `);
+WHERE a.isactive = true
+  AND a.asset_class = 'manufacturing'
+
+ORDER BY a.assetname;
 
   return res.status(200).json({
     assets: result.rows
