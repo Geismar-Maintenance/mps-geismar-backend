@@ -78,23 +78,23 @@ ORDER BY total_used DESC;
   const result = await pool.query(
     `
     SELECT
-      p.partid,
-      p.partnumber,
-      p.description,
-      l.cabinet,
-      l.section,
-      l.bin,
-      pl.qty
-    FROM partlocations pl
-    JOIN masterparts p ON p.partid = pl.partid
-    JOIN locations l ON l.locationid = pl.locationid
-    WHERE l.cabinet = $1
-      AND ($2 IS NULL OR l.section ILIKE $2)
-    ORDER BY
-      l.section,
-      length(l.bin),
-      l.bin,
-      p.partnumber;
+  p.partid,
+  p.partnumber,
+  p.description,
+  l.cabinet,
+  l.section,
+  l.bin,
+  pl.qty
+FROM partlocations pl
+JOIN masterparts p ON p.partid = pl.partid
+JOIN locations l ON l.locationid = pl.locationid
+WHERE l.cabinet = $1
+  AND ($2::text IS NULL OR l.section ILIKE $2)
+ORDER BY
+  l.section,
+  length(l.bin),
+  l.bin,
+  p.partnumber;
     `,
     [cabinet, sectionFilter]   // ✅ USE THIS
   );
