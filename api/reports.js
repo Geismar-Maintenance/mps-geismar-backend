@@ -63,38 +63,44 @@ ORDER BY total_used DESC;
     // ===============================
     if (type === "inventory-section") {
 
-      if (!cabinet || !section) {
-        return res.status(400).json({
-          error: "cabinet and section required"
-        });
-      }
+  if (!cabinet) {
+    return res.status(400).json({
+      error: "cabinet required"
+    });
+  }
 
-      const result = await pool.query(
-        `
-        SELECT
-          p.partid,
-          p.partnumber,
-          p.description,
-          l.cabinet,
-          l.section,
-          l.bin,
-          pl.qty
-        FROM partlocations pl
-        JOIN masterparts p ON p.partid = pl.partid
-        JOIN locations l ON l.locationid = pl.locationid
-        WHERE l.cabinet = $1
-          AND l.section LIKE $2
-        ORDER BY
-          length(l.bin),
-          l.bin,
-          p.partnumber;
-        `,
-        [cabinet, section]
-      );
+  // ✅ Build filter correctly
+  const sectionFilter =
+    section && section.trim() !== ''
+      ? section.trim() + '%'
+      : null;
 
-      return res.status(200).json(result.rows);
-    }
+  const result = await pool.query(
+    `
+    SELECT
+      p.partid,
+      p.partnumber,
+      p.description,
+      l.cabinet,
+      l.section,
+      l.bin,
+      pl.qty
+    FROM partlocations pl
+    JOIN masterparts p ON p.partid = pl.partid
+    JOIN locations l ON l.locationid = pl.locationid
+    WHERE l.cabinet = $1
+      AND ($2 IS NULL OR l.section ILIKE $2)
+    ORDER BY
+      l.section,
+      length(l.bin),
+      l.bin,
+      p.partnumber;
+    `,
+    [cabinet, sectionFilter]   // ✅ USE THIS
+  );
 
+  return res.status(200).json(result.rows);
+}
     // ===============================
     // ✅ RUNTIME VALIDATION (NEW)
     // ===============================
