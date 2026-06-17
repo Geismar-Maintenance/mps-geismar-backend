@@ -101,7 +101,10 @@ const locations = await query(
   `SELECT pl.locationid, l.cabinet, l.section, l.bin, pl.qty
    FROM partlocations pl
    JOIN locations l ON l.locationid = pl.locationid
-   WHERE pl.partid = $1 AND pl.qty > 0
+   WHERE pl.partid = $1
+    AND pl.is_active = true
+    AND pl.qty > 0
+
    ORDER BY l.cabinet, l.section, l.bin`,
   [id]
 );
@@ -139,7 +142,10 @@ async function searchParts(res, search) {
         p.description,
         p.cost,
         p.reorderlevel,
-        COALESCE(SUM(pl.qty), 0)::int AS total_qty
+        COALESCE(SUM(
+          CASE WHEN pl.is_active = true THEN pl.qty ELSE 0 END
+        ), 0)::int AS total_qty
+
      FROM masterparts p
      LEFT JOIN partlocations pl ON pl.partid = p.partid
      WHERE
@@ -156,7 +162,8 @@ async function searchParts(res, search) {
     `SELECT pl.partid, l.cabinet, l.section, l.bin, pl.qty
      FROM partlocations pl
      JOIN locations l ON l.locationid = pl.locationid
-     WHERE pl.qty > 0`
+     WHERE pl.is_active = true
+      AND pl.qty > 0`
   );
 
   const merged = parts.rows.map(p => ({
@@ -184,7 +191,10 @@ async function getInventoryFilter(res, type) {
         p.cost,
         p.reorderlevel,
         p.is_active,
-        COALESCE(SUM(pl.qty), 0)::int AS total_qty
+    COALESCE(SUM(
+    CASE WHEN pl.is_active = true THEN pl.qty ELSE 0 END
+      ), 0)::int AS total_qty
+
       FROM masterparts p
       LEFT JOIN partlocations pl ON p.partid = pl.partid
       GROUP BY
@@ -224,7 +234,8 @@ async function getInventoryFilter(res, type) {
     SELECT pl.partid, l.cabinet, l.section, l.bin, pl.qty
     FROM partlocations pl
     JOIN locations l ON l.locationid = pl.locationid
-    WHERE pl.qty > 0
+    WHERE pl.is_active = true
+      AND pl.qty > 0
     `
   );
 
@@ -254,7 +265,9 @@ async function getInventoryFilter(res, type) {
     JOIN locations l ON l.locationid = pl.locationid
     JOIN masterparts p ON p.partid = pl.partid
     WHERE COALESCE(l.isreceiving, false) = true
+      AND pl.is_active = true
       AND pl.qty > 0
+
     ORDER BY p.partnumber, l.cabinet, l.section, l.bin
   `);
 
@@ -305,7 +318,9 @@ async function getInventorySummary(res) {
         SELECT
           p.partid,
           p.reorderlevel,
-          COALESCE(SUM(pl.qty), 0) AS total_qty
+          COALESCE(SUM(
+            CASE WHEN pl.is_active = true THEN pl.qty ELSE 0 END
+          ), 0) AS total_qty
         FROM masterparts p
         LEFT JOIN partlocations pl ON p.partid = pl.partid
         GROUP BY p.partid
@@ -453,7 +468,8 @@ async function importInventory(req, res) {
         `INSERT INTO partlocations (partid, locationid, qty)
          VALUES ($1,$2,$3)
          ON CONFLICT (partid, locationid)
-         DO UPDATE SET qty = EXCLUDED.qty`,
+         DO UPDATE SET qty = EXCLUDED.qty,
+          is_active = true`,
         [partid, locationid, qty]
       );
     }
