@@ -77,7 +77,7 @@ ORDER BY total_used DESC;
 
   const result = await pool.query(
     `
-    SELECT
+SELECT
   p.partid,
   p.partnumber,
   p.description,
@@ -90,6 +90,8 @@ JOIN masterparts p ON p.partid = pl.partid
 JOIN locations l ON l.locationid = pl.locationid
 WHERE l.cabinet = $1
   AND ($2::text IS NULL OR l.section ILIKE $2)
+  AND pl.is_active = true
+  AND pl.qty > 0
 ORDER BY
   l.section,
   length(l.bin),
