@@ -43,6 +43,7 @@ export default async function handler(req, res) {
       JOIN locations l
         ON l.locationid = pl.locationid
       WHERE pl.partid = $1
+        AND pl.is_active = true
         AND pl.qty > 0
       ORDER BY l.cabinet, l.section, l.bin
     `, [partid]);
